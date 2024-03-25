@@ -1,5 +1,7 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdbool.h>
+#include <time.h>
 
 //--------------------------- Globals ---------------------------//
 // Video device registers
@@ -256,14 +258,30 @@ const short int background[76800 * 2] = {
 
 
 //--------------------- Function Prototypes ---------------------//
-void clear_board();
-void plot_pixel(int x, int y, int color);
+// Graphics
+void clear_grid();
+void plot_pixel(int x, int y, short int color);
 void wait_for_vsync();
 void swap(int* a, int* b);
+
+// Tiles
+void init_tiles(bool *active_tile, int *location_tile, int *value_tile, short int *color_tile);
+void activate_tile(bool *active_tile, int *location_tile, int *value_tile, short int *color_tile, int tile_id);
+void set_color_tile(int *value_tile, short int *color_tile, int tile_id);
+void draw_tiles(const bool *active_tile, const int *location_tile, const short int *color_tile);
 
 
 //------------------------ Main Function ------------------------//
 int main(void) {
+	
+	// Declare tile variables
+	bool active_tile[16];
+	int location_tile[16];
+	int value_tile[16];
+	short int color_tile[16];
+	
+	// Initialize tiles
+	init_tiles(active_tile, location_tile, value_tile, color_tile);
 	
     // Set front pixel buffer to Buffer 1
     *(buffer_reg + 1) = (int) &Buffer1; // first store the address in the back buffer					
@@ -272,16 +290,19 @@ int main(void) {
     // Initialize a pointer to the pixel buffer, used by drawing functions
     pixel_buffer_start = *buffer_reg;
     
-	clear_board();
+	clear_grid();
 
     // Set back pixel buffer to Buffer 2
     *(buffer_reg + 1) = (int) &Buffer2;
     pixel_buffer_start = *(buffer_reg + 1); // we draw on the back buffer
     
-	clear_board();
+	clear_grid();
 
 	// Loop infinitely
     while (1) {
+		
+		// Draw tiles
+		draw_tiles(active_tile, location_tile, color_tile);
 		
 		// Swap front and back buffers
         wait_for_vsync(); 
@@ -293,7 +314,7 @@ int main(void) {
 
 
 //-------------------- Clear Screen Function --------------------//
-void clear_board() {
+void clear_grid() {
     
 	short int color;
 
@@ -315,7 +336,7 @@ void clear_board() {
 
 
 //--------------------- Plot Pixel Function ---------------------//
-void plot_pixel(int x, int y, int color) {
+void plot_pixel(int x, int y, short int color) {
 	
 	volatile short int *one_pixel_address;
     
@@ -343,4 +364,137 @@ void swap(int* a, int* b) {
     int temp = *a;
     *a = *b;
     *b = temp;
+}
+
+
+//--------------------- Init Tiles Function ---------------------//
+void init_tiles(bool *active_tile, int *location_tile, int *value_tile, short int *color_tile) {
+	
+	// Activate first tile, deactivate the rest
+	for (int tile_id = 0; tile_id < 16; tile_id++) {
+		
+		if (tile_id == 0) {
+			activate_tile(active_tile, location_tile, value_tile, color_tile, tile_id);
+		}
+		
+		else {
+			active_tile[tile_id] = false;
+		}
+	}
+}
+
+
+//------------------- Activate Tile Function --------------------//
+void activate_tile(bool *active_tile, int *location_tile, int *value_tile, short int *color_tile, int tile_id) { 
+	
+	int rand_location;
+	int rand_value;
+	
+	// Set random seed, pick random location and value for tile
+	srand(time(NULL));
+	
+	rand_location = rand() % 16;
+	//while (active_tile[rand_location]) { // note: could optimize the location generation process by generating a number based on the available spots, rather than brute forcing it
+	//	rand_location = rand() % 16; 
+	//}
+	
+	rand_value = (rand() % 2) * 2;
+
+	
+	// Turn on tile, set location, value, and color
+	active_tile[tile_id] = true;
+	location_tile[tile_id] = rand_location;
+	value_tile[tile_id] = rand_value;
+	set_color_tile(value_tile, color_tile, tile_id);
+}
+
+
+//------------------- Set Tile Color Function -------------------//
+void set_color_tile(int *value_tile, short int *color_tile, int tile_id) {
+	
+	// Set color based on tile value
+	switch (value_tile[tile_id]) {
+  		
+		case 2:
+    		color_tile[tile_id] = 0xef1b;
+    		break;
+			
+  		case 4:
+    		color_tile[tile_id] = 0xeef8;
+    		break;
+			
+		case 8:
+    		color_tile[tile_id] = 0xed8f;
+    		break;
+			
+		case 16:
+    		color_tile[tile_id] = 0xf4ac;
+    		break;
+			
+		case 32:
+    		color_tile[tile_id] = 0xf3ec;
+    		break;
+			
+		case 64:
+    		color_tile[tile_id] = 0xf2e7;
+    		break;
+			
+		case 128:
+    		color_tile[tile_id] = 0xee6e;
+    		break;
+			
+		case 256:
+    		color_tile[tile_id] = 0xee4c;
+    		break;
+			
+		case 512:
+    		color_tile[tile_id] = 0xee2a;
+    		break;
+			
+		case 1024:
+    		color_tile[tile_id] = 0xee28;
+    		break;
+			
+		case 2048:
+    		color_tile[tile_id] = 0xee06;
+    		break;
+			
+		case 4096:
+    		color_tile[tile_id] = 0xf32e;
+    		break;
+			
+		case 8192:
+    		color_tile[tile_id] = 0xea6c;
+    		break;
+			
+  		default:
+    		color_tile[tile_id] = 0x0000;
+	}
+}
+
+
+//---------------------- Draw Tile Function ---------------------//
+void draw_tiles(const bool *active_tile, const int *location_tile, const short int *color_tile) {
+	
+	int x_start;
+	int y_start;
+	
+	// Iterate through tiles, draw active ones
+	for (int tile_id = 0; tile_id < 16; tile_id++) {
+		
+		if (active_tile[tile_id]) {
+			
+			// Set top left corner of tile
+			x_start = 12 + ((tile_id % 4) * 53);
+			y_start = 16 + ((tile_id / 4) * 53);
+			
+			// Draw 47 x 47 tile
+			for (int x = 0; x < 47; x++) {
+				for (int y = 0; y < 47; y++) {
+					plot_pixel(x_start + x, y_start + y, color_tile[tile_id]);
+				}
+			}
+		}
+							
+	}
 }
