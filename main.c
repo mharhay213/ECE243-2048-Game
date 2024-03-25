@@ -268,6 +268,7 @@ void swap(int* a, int* b);
 void init_tiles(bool *active_tile, int *location_tile, int *value_tile, short int *color_tile);
 void activate_tile(bool *active_tile, int *location_tile, int *value_tile, short int *color_tile, int tile_id);
 void set_color_tile(int *value_tile, short int *color_tile, int tile_id);
+void move_tiles(bool *active_tile, int *location_tile, int *value_tile, short int *color_tile, int direction);
 void draw_tiles(const bool *active_tile, const int *location_tile, const short int *color_tile);
 
 
@@ -297,12 +298,21 @@ int main(void) {
     pixel_buffer_start = *(buffer_reg + 1); // we draw on the back buffer
     
 	clear_grid();
+	
 
 	// Loop infinitely
     while (1) {
-		
+
 		// Draw tiles
 		draw_tiles(active_tile, location_tile, color_tile);
+		
+		// Wait
+		for (int i = 0; i < 10000000; i++) {
+			continue;
+		}
+		
+		// Move tile one space
+		move_tiles(active_tile, location_tile, value_tile, color_tile, 1);
 		
 		// Swap front and back buffers
         wait_for_vsync(); 
@@ -397,9 +407,7 @@ void activate_tile(bool *active_tile, int *location_tile, int *value_tile, short
 	//while (active_tile[rand_location]) { // note: could optimize the location generation process by generating a number based on the available spots, rather than brute forcing it
 	//	rand_location = rand() % 16; 
 	//}
-	
-	rand_value = (rand() % 2) * 2;
-
+	rand_value = rand() % 2 == 0 ? 2 : 4;
 	
 	// Turn on tile, set location, value, and color
 	active_tile[tile_id] = true;
@@ -472,6 +480,47 @@ void set_color_tile(int *value_tile, short int *color_tile, int tile_id) {
 	}
 }
 
+//---------------------- Move Tile Function ---------------------//
+void move_tiles(bool *active_tile, int *location_tile, int *value_tile, short int *color_tile, int direction) {
+	
+	// Directions: imagine going counter-clockwise starting at 0 degrees //
+	// 0 = right
+	// 1 = up
+	// 2 = left
+	// 3 = down
+		
+	// Right
+	if (direction == 0) {
+		
+		// If tile is activated
+		for (int base = 14; base > 11; base--) {
+			for (int diff = 0; base <= 12; base + 4) {
+				
+				if (active_tile[tile_id]) {
+					location_tile[base - diff] += 1;
+				}
+				
+			}
+		}
+	}
+	
+	// Up
+	else if (direction == 1) {
+		location_tile[tile_id] -= 4;
+	}
+	
+	// Left
+	else if (direction == 2) {
+		location_tile[tile_id] -= 1;
+	}
+
+	// Down
+	else if (direction == 3) {
+		location_tile[tile_id] += 4;
+	}
+
+}
+
 
 //---------------------- Draw Tile Function ---------------------//
 void draw_tiles(const bool *active_tile, const int *location_tile, const short int *color_tile) {
@@ -485,8 +534,8 @@ void draw_tiles(const bool *active_tile, const int *location_tile, const short i
 		if (active_tile[tile_id]) {
 			
 			// Set top left corner of tile
-			x_start = 12 + ((tile_id % 4) * 53);
-			y_start = 16 + ((tile_id / 4) * 53);
+			x_start = 12 + ((location_tile[tile_id] % 4) * 53);
+			y_start = 17 + ((location_tile[tile_id] / 4) * 53);
 			
 			// Draw 47 x 47 tile
 			for (int x = 0; x < 47; x++) {
@@ -494,6 +543,8 @@ void draw_tiles(const bool *active_tile, const int *location_tile, const short i
 					plot_pixel(x_start + x, y_start + y, color_tile[tile_id]);
 				}
 			}
+			
+			
 		}
 							
 	}
