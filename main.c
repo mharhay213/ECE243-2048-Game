@@ -281,6 +281,11 @@ int main(void) {
 	int value_tile[16];
 	short int color_tile[16];
 	
+	short int background_color_tile[16];
+	for (int tile_id = 0; tile_id < 16; tile_id++) {
+		background_color_tile[tile_id] = 0xcdf5;
+	}
+	
 	// Initialize tiles
 	init_tiles(active_tile, location_tile, value_tile, color_tile);
 	
@@ -303,16 +308,19 @@ int main(void) {
 	// Loop infinitely
     while (1) {
 
-		// Draw tiles
-		draw_tiles(active_tile, location_tile, color_tile);
-		
 		// Wait
 		for (int i = 0; i < 10000000; i++) {
 			continue;
 		}
 		
+		// Erase previous tiles
+		draw_tiles(active_tile, location_tile, background_color_tile);
+		
 		// Move tile one space
-		move_tiles(active_tile, location_tile, value_tile, color_tile, 1);
+		move_tiles(active_tile, location_tile, value_tile, color_tile, 2);
+		
+		// Draw tiles
+		draw_tiles(active_tile, location_tile, color_tile);
 		
 		// Swap front and back buffers
         wait_for_vsync(); 
@@ -491,34 +499,43 @@ void move_tiles(bool *active_tile, int *location_tile, int *value_tile, short in
 		
 	// Right
 	if (direction == 0) {
-		
-		// If tile is activated
-		for (int base = 14; base > 11; base--) {
-			for (int diff = 0; base <= 12; base + 4) {
-				
-				if (active_tile[tile_id]) {
-					location_tile[base - diff] += 1;
-				}
-				
+
+		for (int tile_id = 0; tile_id < 16; tile_id++) {
+			if (active_tile[tile_id] && (location_tile[tile_id] + 1) % 4 != 0) {
+				location_tile[tile_id] += 1;
 			}
 		}
 	}
-	
+
 	// Up
 	else if (direction == 1) {
-		location_tile[tile_id] -= 4;
+		
+		for (int tile_id = 0; tile_id < 16; tile_id++) {
+			if (active_tile[tile_id] && location_tile[tile_id] > 3) {
+				location_tile[tile_id] -= 4;
+			}
+		}
 	}
-	
+
 	// Left
 	else if (direction == 2) {
-		location_tile[tile_id] -= 1;
+
+		for (int tile_id = 0; tile_id < 16; tile_id++) {
+			if (active_tile[tile_id] && location_tile[tile_id] % 4 != 0) {
+				location_tile[tile_id] -= 1;
+			}
+		}
 	}
 
 	// Down
 	else if (direction == 3) {
-		location_tile[tile_id] += 4;
-	}
 
+		for (int tile_id = 0; tile_id < 16; tile_id++) {
+			if (active_tile[tile_id] && location_tile[tile_id] < 12) {
+				location_tile[tile_id] += 4;
+			}
+		}
+	}
 }
 
 
@@ -537,9 +554,9 @@ void draw_tiles(const bool *active_tile, const int *location_tile, const short i
 			x_start = 12 + ((location_tile[tile_id] % 4) * 53);
 			y_start = 17 + ((location_tile[tile_id] / 4) * 53);
 			
-			// Draw 47 x 47 tile
-			for (int x = 0; x < 47; x++) {
-				for (int y = 0; y < 47; y++) {
+			// Draw 46 x 46 tile
+			for (int x = 0; x < 46; x++) {
+				for (int y = 0; y < 46; y++) {
 					plot_pixel(x_start + x, y_start + y, color_tile[tile_id]);
 				}
 			}
