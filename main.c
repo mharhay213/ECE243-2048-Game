@@ -929,9 +929,8 @@ int main(void) {
 	}
 	
 	// Declare keyboard variable
-	volatile int *PS2controller = (int *)0xFF20010;
+	volatile int *PS2controller = (int *)0xFF200100;
 	int PS2_data;
-	int RVALID;
 	int byte1, byte2, byte3;
 	int IBF;
 	int direction = 4;
@@ -963,27 +962,21 @@ int main(void) {
     while (1) {
 		
 		// Reset direction to no movement, then poll for movement 
-		direction = 4;
-		IBF = *(PS2controller + 4) & 0x2; // Extracting Input Buffer Full
+ 		IBF = *(PS2controller + 4) & 0x2; // Extracting Input Buffer Full
 		
 		// Read data if input buffer is full
 		if (IBF == 1) {     
 			PS2_data = *(PS2controller);	// Read the Data register in the PS/2 port
-			RVALID = (PS2_data & 0x8000);	// Extract the RVALID field
-			
-			if (RVALID != 0) {
-				/* always save the last three bytes received */
-				byte1 = byte2;
-				byte2 = byte3;
-				byte3 = PS2_data & 0xFF;
+			byte1 = PS2_data & 0xFF;
+			byte2 = PS2_data & 0xFF00;
+			byte3 = PS2_data & 0xFF0000;
 				
-				// Check if bits 15-8 is F0 or not because then it should be a break code meaning inaction
-				if (byte3 == 0x75 || byte3  == 0x6B || byte3 == 0x72 || byte3 == 0x74) {  // we dont know make or break but could be arrow key
-					
-					// If it's a make code, set direction
-					if (byte2 == 0xE0) {
-						direction = chooseDirection(byte3);
-					}
+			// Check if bits 15-8 is F0 or not because then it should be a break code meaning inaction
+			if (byte3 == 0x75 || byte3  == 0x6B || byte3 == 0x72 || byte3 == 0x74) {  // we dont know make or break but could be arrow key
+
+				// If it's a make code, set direction
+				if (byte2 == 0xE0) {
+					direction = chooseDirection(byte3);
 				}
 			}	
 		}
@@ -1014,7 +1007,7 @@ int main(void) {
 		
 		
 		// Move tile one space
-		move_tiles(active_tile, location_tile, value_tile, 1);
+		move_tiles(active_tile, location_tile, value_tile, direction);
 		
 		// Draw tiles
 		draw_tiles(active_tile, value_tile, location_tile);
@@ -1149,7 +1142,7 @@ void move_tiles(bool *active_tile, int *location_tile, int *value_tile, int dire
 						
 						// Tiles match, merge tiles
 						if (value_tile[tile_id_check] == value_tile[tile_id]) {
-							merge_tiles(tile_id_check, tile_id);
+							//merge_tiles(tile_id_check, tile_id);
 						}
 							
 						// Tiles do not match, do not move
