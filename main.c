@@ -912,6 +912,8 @@ void activate_tile(bool *active_tile, int *location_tile, int *value_tile, int t
 void move_tiles(bool *active_tile, int *location_tile, int *value_tile, int direction);
 void draw_tiles(const bool *active_tile, const int *value_tile, const int *location_tile);
 
+//keyboard
+int chooseDirection(int dirCode);
 
 //------------------------ Main Function ------------------------//
 int main(void) {
@@ -943,6 +945,49 @@ int main(void) {
     pixel_buffer_start = *(buffer_reg + 1); // we draw on the back buffer
     
 	clear_grid();
+
+	// set up for keyboard to be used
+		// send command F4 to enable keyboard
+		// send command FF to reset keyboard
+		// Disabling the 8042's IBF Interrupt
+		//
+
+	
+	int PS2_data;
+	int RVALID;
+	int direction = 4; //set to junk value
+	int byte1, byte2, byte3;
+	int IBF;
+	//polling for input from keyboard
+	while (1) {
+		direction = 4;
+		IBF = *(PS2controller + 4) & 0x2; //extracting Input Buffer Full
+		if (IBF == 1) {     // read data if input buffer is full
+			PS2_data = *(PS2controller);	// read the Data register in the PS/2 port
+			RVALID = (PS2_data & 0x8000);	// extract the RVALID field
+			if (RVALID != 0)
+			{
+				/* always save the last three bytes received */
+				byte1 = byte2;
+				byte2 = byte3;
+				byte3 = PS2_data & 0xFF;
+			}
+			else 
+				continue;; // if not valid read then dont do anything /// make sure it still draws
+			// check if bits 15-8 is F0 or not because then it should be a break code meaning inaction
+			//int bits_to_check =  PS2_data & 0xFF00; 
+			if ( byte3 == 0x75 || byte3  == 0x6B || byte3 == 0x72 || byte3 == 0x74) {  // we dont know make or break but could be arrow key
+				//now determine if arrow break or make
+				if (byte2 == 0xE0) { // must be a make code
+					direction = chooseDirection( byte3 );
+				}
+				else { //must be a break code
+					
+				}
+			}
+		}
+	}
+
 	
 	// Loop infinitely
     while (1) {
@@ -1295,4 +1340,22 @@ void draw_tiles(const bool *active_tile, const int *value_tile, const int *locat
 				
 		}						
 	}
+}
+
+
+
+int chooseDirection(int dirCode) {
+	// up = 
+	int dirCode = dirCode & 0xFF; //extract dirCode 0-7 for which key
+	if (dirCode == 0x75)    //UP E0,75 E0,F0,75
+		return 1;
+	else if (dirCode == 0x6B)   //LEFT E0,6B E0,F0,6B
+		return 2;
+	else if (dirCode == 0x72)   //DOWN E0,72 E0,F0,72
+		return 3;
+	else if (dirCode == 0x74)    //RIGHT E0,74	E0,F0,7
+		return 0;
+	else
+		return 4;    //no movement of tiles
+	//key //make //break
 }
