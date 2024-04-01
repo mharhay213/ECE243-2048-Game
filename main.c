@@ -910,6 +910,7 @@ void swap(int* a, int* b);
 void init_tiles(bool *active_tile, int *location_tile, int *value_tile);
 void activate_tile(bool *active_tile, int *location_tile, int *value_tile, int tile_id);
 void move_tiles(bool *active_tile, int *location_tile, int *value_tile, int direction);
+void merge_tiles(bool *active_tile, int *location_tile, int *value_tile, int tile_id_1, int tile_id_2);
 void draw_tiles(const bool *active_tile, const int *value_tile, const int *location_tile);
 
 // Keyboard
@@ -958,40 +959,49 @@ int main(void) {
     
 	clear_grid();
 
-	// set up for keyboard to be used
-	// send command F4 to enable keyboard
-	// send command FF to reset keyboard
-	// Disabling the 8042's IBF Interrupt
-
 	// Loop infinitely
     while (1) {
 		
-		// Poll keyboard for movement 
+		// Poll keyboard for input 
  		PS2_data = keyboard->RB;
 		
+		// If input detected, update direction and spawn new tile
 		if ((PS2_data & 0xFF00) != 0) {
 			command = PS2_data & 0xFF;
 				
-			// Check if bits 15-8 is F0 or not because then it should be a break code meaning inaction
-			if (command == 0x75 || command  == 0x6B || command == 0x72 || command == 0x74) {
+			// Check if input is an arrow key
+			if (command == 0x75 || command  == 0x6B || command == 0x72 || command == 0x74) {	
+				
+				// Update direction
 				direction = chooseDirection(command);
-			}	
+				
+				// Spawn tile
+				int tile_id = 0;
+				while (tile_id < 15 && active_tile[tile_id]) {
+					tile_id++;
+				}
+				activate_tile(active_tile, location_tile, value_tile, tile_id);
+			}		
+		}
+		
+		else {
+			direction = 4;
 		}
 		
 		// Wait
-		for (int i = 0; i < 100000; i++) {
+		for (int i = 0; i < 10000; i++) {
 			continue;
 		}
 		
 		// Erase old tiles (CAN OPTIMIZE LATER)
 		clear_grid();
-		
-		// Move tile one space
+
+		// Move tiles one space
 		move_tiles(active_tile, location_tile, value_tile, direction);
 		
 		// Draw tiles
 		draw_tiles(active_tile, value_tile, location_tile);
-		
+				
 		// Swap front and back buffers
         wait_for_vsync(); 
 		
@@ -1102,7 +1112,7 @@ void move_tiles(bool *active_tile, int *location_tile, int *value_tile, int dire
 	// 1 = up
 	// 2 = left
 	// 3 = down
-	
+		
 	// If direction == 4, no movement, return
 	if (direction == 4) {
 		return;
@@ -1118,17 +1128,22 @@ void move_tiles(bool *active_tile, int *location_tile, int *value_tile, int dire
 				
 				// If tile in the way, check whether it merges or not
 				for (int tile_id_check = 0; tile_id_check < 16; tile_id_check++) {
-					if (tile_id != tile_id_check && location_tile[tile_id_check] == location_tile[tile_id] + 1) {
+					if (active_tile[tile_id_check] && location_tile[tile_id_check] == location_tile[tile_id] + 1 && tile_id != tile_id_check) {
 						
 						// Tiles match, merge tiles
 						if (value_tile[tile_id_check] == value_tile[tile_id]) {
-							//merge_tiles(tile_id_check, tile_id);
+							merge_tiles(active_tile, location_tile, value_tile, tile_id_check, tile_id);
+							break;
 						}
 							
 						// Tiles do not match, do not move
+						else {
+							location_tile[tile_id] -= 1;
+						}
 					}
 				}
-					location_tile[tile_id] += 1;
+				
+				location_tile[tile_id] += 1;
 			}
 		}
 	}
@@ -1140,6 +1155,24 @@ void move_tiles(bool *active_tile, int *location_tile, int *value_tile, int dire
 			
 			// If not at edge
 			if (active_tile[tile_id] && location_tile[tile_id] > 3) {
+				
+				// If tile in the way, check whether it merges or not
+				for (int tile_id_check = 0; tile_id_check < 16; tile_id_check++) {
+					if (active_tile[tile_id_check] && location_tile[tile_id_check] == location_tile[tile_id] - 4 && tile_id != tile_id_check) {
+						
+						// Tiles match, merge tiles
+						if (value_tile[tile_id_check] == value_tile[tile_id]) {
+							merge_tiles(active_tile, location_tile, value_tile, tile_id_check, tile_id);
+							break;
+						}
+							
+						// Tiles do not match, offset tile move
+						else {
+							location_tile[tile_id] += 4;
+						}
+					}
+				}
+				
 				location_tile[tile_id] -= 4;
 			}
 		}
@@ -1152,6 +1185,24 @@ void move_tiles(bool *active_tile, int *location_tile, int *value_tile, int dire
 			
 			// If not at edge
 			if (active_tile[tile_id] && location_tile[tile_id] % 4 != 0) {
+				
+				// If tile in the way, check whether it merges or not
+				for (int tile_id_check = 0; tile_id_check < 16; tile_id_check++) {
+					if (active_tile[tile_id_check] && location_tile[tile_id_check] == location_tile[tile_id] - 1 && tile_id != tile_id_check) {
+						
+						// Tiles match, merge tiles
+						if (value_tile[tile_id_check] == value_tile[tile_id]) {
+							merge_tiles(active_tile, location_tile, value_tile, tile_id_check, tile_id);
+							break;
+						}
+							
+						// Tiles do not match, offset tile move
+						else {
+							location_tile[tile_id] += 1;
+						}
+					}
+				}
+				
 				location_tile[tile_id] -= 1;
 			}
 		}
@@ -1164,9 +1215,39 @@ void move_tiles(bool *active_tile, int *location_tile, int *value_tile, int dire
 			
 			// If not at edge
 			if (active_tile[tile_id] && location_tile[tile_id] < 12) {
+				
+				// If tile in the way, check whether it merges or not
+				for (int tile_id_check = 0; tile_id_check < 16; tile_id_check++) {
+					if (active_tile[tile_id_check] && location_tile[tile_id_check] == location_tile[tile_id] + 4 && tile_id != tile_id_check) {
+						
+						// Tiles match, merge tiles
+						if (value_tile[tile_id_check] == value_tile[tile_id]) {
+							merge_tiles(active_tile, location_tile, value_tile, tile_id_check, tile_id);
+							break;
+						}
+							
+						// Tiles do not match, offset tile move
+						else {
+							location_tile[tile_id] -= 4;
+						}
+					}
+				}
+				
 				location_tile[tile_id] += 4;
 			}
 		}
+	}
+}
+
+
+//--------------------- Merge Tiles Function --------------------//
+void merge_tiles(bool *active_tile, int *location_tile, int *value_tile, int tile_id_1, int tile_id_2) {
+	
+	// If tiles match, double value and deactivate second tile
+	if (value_tile[tile_id_1] == value_tile[tile_id_2]) {
+		
+		value_tile[tile_id_1] *= 2;
+		active_tile[tile_id_2] = false;
 	}
 }
 
