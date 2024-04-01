@@ -915,6 +915,17 @@ void draw_tiles(const bool *active_tile, const int *value_tile, const int *locat
 // Keyboard
 int chooseDirection(int dirCode);
 
+
+//--------------------------- Classes ---------------------------//
+// Keyboard PIT class
+struct key_PIT {
+	volatile unsigned int RB;
+	volatile unsigned int WB;
+	volatile unsigned int STATUS;
+	volatile unsigned int CMD;
+};
+
+
 //------------------------ Main Function ------------------------//
 int main(void) {
 	
@@ -923,16 +934,10 @@ int main(void) {
 	int location_tile[16];
 	int value_tile[16];
 	
-	short int background_color_tile[16];
-	for (int tile_id = 0; tile_id < 16; tile_id++) {
-		background_color_tile[tile_id] = 0xcdf5;
-	}
-	
-	// Declare keyboard variable
-	volatile int *PS2controller = (int *)0xFF200100;
+	// Declare keyboard variables
+	struct key_PIT *const keyboard = ((struct key_PIT *) 0xFF200100);
 	int PS2_data;
-	int byte1, byte2, byte3;
-	int IBF;
+	int command;
 	int direction = 4;
 	
 	// Initialize tiles
@@ -961,23 +966,15 @@ int main(void) {
 	// Loop infinitely
     while (1) {
 		
-		// Reset direction to no movement, then poll for movement 
- 		IBF = *(PS2controller + 4) & 0x2; // Extracting Input Buffer Full
+		// Poll keyboard for movement 
+ 		PS2_data = keyboard->RB;
 		
-		// Read data if input buffer is full
-		if (IBF == 1) {     
-			PS2_data = *(PS2controller);	// Read the Data register in the PS/2 port
-			byte1 = PS2_data & 0xFF;
-			byte2 = PS2_data & 0xFF00;
-			byte3 = PS2_data & 0xFF0000;
+		if ((PS2_data & 0x100) != 0) {
+			command = PS2_data & 0xFF;
 				
 			// Check if bits 15-8 is F0 or not because then it should be a break code meaning inaction
-			if (byte3 == 0x75 || byte3  == 0x6B || byte3 == 0x72 || byte3 == 0x74) {  // we dont know make or break but could be arrow key
-
-				// If it's a make code, set direction
-				if (byte2 == 0xE0) {
-					direction = chooseDirection(byte3);
-				}
+			if (command == 0x75 || command  == 0x6B || command == 0x72 || command == 0x74) {  // we dont know make or break but could be arrow key
+				direction = chooseDirection(command);
 			}	
 		}
 		
@@ -986,25 +983,8 @@ int main(void) {
 			continue;
 		}
 		
-		// Erase old tiles
+		// Erase old tiles (CAN OPTIMIZE LATER)
 		clear_grid();
-		
-		/*
-		for (int tile_id = 0; tile_id < 16; tile_id++) {
-			if 
-			plot_pixel(x_box_prev1[box_id], y_box_prev1[box_id], 0x0000);
-			plot_pixel(x_box_prev1[box_id] + 1, y_box_prev1[box_id], 0x0000);
-			plot_pixel(x_box_prev1[box_id], y_box_prev1[box_id] + 1, 0x0000);
-			plot_pixel(x_box_prev1[box_id] + 1, y_box_prev1[box_id] + 1, 0x0000);
-
-		}
-		
-		// Update previous boxes
-		for (int tile_id = 0; tile_id < 16; tile_id++) {
-			location_tile_prev[tile_id] = location_tile[tile_id];
-		}
-		*/
-		
 		
 		// Move tile one space
 		move_tiles(active_tile, location_tile, value_tile, direction);
@@ -1334,22 +1314,23 @@ void draw_tiles(const bool *active_tile, const int *value_tile, const int *locat
 
 //------------------- Choose Direction Function -----------------//
 int chooseDirection(int dirCode) { 
-	// UP E0,75 E0,F0,75
+	
+	// Up
 	if (dirCode == 0x75) {
 		return 1;
 	}
 	
-	// LEFT E0,6B E0,F0,6B
+	// Left
 	else if (dirCode == 0x6B) {   
 		return 2;
 	}
 	
-	// DOWN E0,72 E0,F0,72
+	// Down
 	else if (dirCode == 0x72) {
 		return 3;
 	}
 	
-	// RIGHT E0,74	E0,F0,7
+	// Right
 	else if (dirCode == 0x74) {
 		return 0;
 	}
