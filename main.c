@@ -969,11 +969,11 @@ int main(void) {
 		// Poll keyboard for movement 
  		PS2_data = keyboard->RB;
 		
-		if ((PS2_data & 0x100) != 0) {
+		if ((PS2_data & 0xFF00) != 0) {
 			command = PS2_data & 0xFF;
 				
 			// Check if bits 15-8 is F0 or not because then it should be a break code meaning inaction
-			if (command == 0x75 || command  == 0x6B || command == 0x72 || command == 0x74) {  // we dont know make or break but could be arrow key
+			if (command == 0x75 || command  == 0x6B || command == 0x72 || command == 0x74) {
 				direction = chooseDirection(command);
 			}	
 		}
