@@ -916,6 +916,9 @@ void draw_tiles(const bool *active_tile, const int *value_tile, const int *locat
 // Keyboard
 int chooseDirection(int dirCode);
 
+//checking Win
+bool checkGameOver(bool *active_tile, int *location_tile, int *value_tile);
+
 
 //--------------------------- Classes ---------------------------//
 // Keyboard PIT class
@@ -1010,6 +1013,55 @@ int main(void) {
     }
 }
 
+//------------------ Check Game Over Function ------------------//
+bool checkGameOver(bool *active_tile, int *location_tile, int *value_tile) {
+	// Check if there are any empty spaces first
+	for (int i = 0; i < 16; i++) {
+		// if a tile isnt active then board has empty spaces so return false
+		if (active_tile[i] == false) {
+			return false;
+		}
+	}
+
+	// If not empty spaces, check if there are any adjacent tiles with same value
+	int up_loc = 16;
+	int down_loc = 16;
+	int left_loc = 16;
+	int right_loc = 16;
+	int loc;
+	for (int i = 0; i < 16; i++) {
+		loc = location_tile[i];
+		up_loc = location_tile[i] - 4;
+		down_loc = location_tile[i] + 4; 
+		left_loc = location_tile[i] - 1;
+		right_loc = location_tile[i] + 1;
+		int value_og = value_tile[i];
+		for (int z = 0; z < 16; z++) {
+			int loc_checking = location_tile[z];
+			int value_checking = value_tile[z];
+			//  If value of tile we are checking isnt equal to value of original (OG) tile, no point seeing if it is adjacent to OG tile
+			if (value_checking != value_og) {
+				continue;
+			}
+			// If location of tile we are checking is equal to the location above or below the OG tile
+			if (loc_checking == up_loc || loc_checking == down_loc) {
+				return false; 
+			}
+			// If location of OG tile is NOT 0, 4 , 8, or 12 and the location of tile we are checking is to the left of original
+			// There must be a valid move
+			if (loc_checking == left_loc && (loc != 0 || loc != 4 || loc != 8 || loc != 12)) {
+				return false;
+			} 
+			// If location of OG tile is NOT  3, 7, 12, or 15 and the location of tile we are checking is to the right of original
+			// There must be a valid move
+			if (loc_checking == right_loc && (loc != 3 || loc != 7 || loc != 12 || loc != 15)) {
+				return false;
+			}
+		}
+	}
+	// If no empty spaces and no adjacent tiles with same value return true as game is over
+	return true;
+}
 
 //-------------------- Clear Screen Function --------------------//
 void clear_grid() {
