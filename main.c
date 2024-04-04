@@ -14,6 +14,7 @@ short int Buffer2[240][512];
 
 // Global game variables
 bool currently_moving = false;
+int direction_store;
 
 // Background
 const short int background[76800 * 2] = {
@@ -904,14 +905,15 @@ const short int tile8192[2116 * 2] = {
 void clear_grid();
 void plot_pixel(int x, int y, short int color);
 void wait_for_vsync();
-void swap(int* a, int* b);
 
 // Tiles
 void init_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, bool *tile_moving);
 void activate_tile(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, bool *tile_moving, int tile_id);
 bool check_location_taken(bool *active_tile, int *location_tile, int location);
-void move_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, bool *tile_moving, int direction);
+void move_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, int *shift_offset_x_prev, int *shift_offset_y_prev, bool *tile_moving, int direction);
+bool tile_should_move(bool *active_tile, int *location_tile, int *value_tile, bool *tile_moving, int location_inc, int tile_id);
 void merge_tiles(bool *active_tile, int *location_tile, int *value_tile, int tile_id_1, int tile_id_2);
+void erase_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, int *shift_offset_x_prev, int *shift_offset_y_prev, bool *tile_moving, int direction);
 void draw_tiles(const bool *active_tile, const int *value_tile, const int *location_tile, int *shift_offset_x, int *shift_offset_y);
 
 // Keyboard
@@ -940,6 +942,8 @@ int main(void) {
 	int value_tile[16];
 	int shift_offset_x[16];
 	int shift_offset_y[16];
+	int shift_offset_x_prev[16];
+	int shift_offset_y_prev[16];
 	bool tile_moving[16];
 	bool spawn_tile = false;
 
@@ -973,53 +977,41 @@ int main(void) {
 		// Poll keyboard for input 
  		PS2_data = keyboard->RB;
 		
-		// If input detected, update direction and spawn new tile
+		// If input detected, update direction
 		if ((PS2_data & 0xFF00) != 0) {
 			command = PS2_data & 0xFF;
-				
-			// Check if input is an arrow key
-			if (command == 0x75 || command  == 0x6B || command == 0x72 || command == 0x74) {	
-				
-				// Update direction
-				direction = chooseDirection(command);
-				currently_moving = true;
-				spawn_tile = true;
-			}
+			direction = chooseDirection(command);
 		}
-		
-		else {
-			direction = 4;
-		}
-
-		// Erase old tiles (CAN OPTIMIZE LATER)
-		clear_grid();
 
 		// Move tiles
-		move_tiles(active_tile, location_tile, value_tile, shift_offset_x, shift_offset_y, tile_moving, direction);
+		move_tiles(active_tile, location_tile, value_tile, shift_offset_x, shift_offset_y, shift_offset_x_prev, shift_offset_y_prev, tile_moving, direction);
 		
 		// Set currently_moving
 		currently_moving = false;
+		direction = 4;
 		for (int tile_id = 0; tile_id < 16; tile_id++) {
 			if (active_tile[tile_id] && tile_moving[tile_id]) {		
 				currently_moving = true;
+				spawn_tile = true;
 				break;
 			}
 		}
 		
-		/*
 		// If tiles done moving and tile to be spawned, activate it
 		if (!currently_moving && spawn_tile) {
-			
 			int tile_id = 0;
 			while (tile_id < 15 && active_tile[tile_id]) {
 				tile_id++;
 			}
 			activate_tile(active_tile, location_tile, value_tile, shift_offset_x, shift_offset_y, tile_moving, tile_id);
+			spawn_tile = false;
 		}
-		*/
 		
 		// Draw tiles
 		draw_tiles(active_tile, value_tile, location_tile, shift_offset_x, shift_offset_y);
+		
+		// Erase old tiles
+		erase_tiles(active_tile, location_tile, value_tile, shift_offset_x, shift_offset_y, shift_offset_x_prev, shift_offset_y_prev, tile_moving, direction);
 				
 		// Swap front and back buffers
         wait_for_vsync(); 
@@ -1029,57 +1021,8 @@ int main(void) {
     }
 }
 
-//------------------ Check Game Over Function ------------------//
-bool checkGameOver(bool *active_tile, int *location_tile, int *value_tile) {
-	// Check if there are any empty spaces first
-	for (int i = 0; i < 16; i++) {
-		// if a tile isnt active then board has empty spaces so return false
-		if (active_tile[i] == false) {
-			return false;
-		}
-	}
 
-	// If not empty spaces, check if there are any adjacent tiles with same value
-	int up_loc = 16;
-	int down_loc = 16;
-	int left_loc = 16;
-	int right_loc = 16;
-	int loc;
-	for (int i = 0; i < 16; i++) {
-		loc = location_tile[i];
-		up_loc = location_tile[i] - 4;
-		down_loc = location_tile[i] + 4; 
-		left_loc = location_tile[i] - 1;
-		right_loc = location_tile[i] + 1;
-		int value_og = value_tile[i];
-		for (int z = 0; z < 16; z++) {
-			int loc_checking = location_tile[z];
-			int value_checking = value_tile[z];
-			//  If value of tile we are checking isnt equal to value of original (OG) tile, no point seeing if it is adjacent to OG tile
-			if (value_checking != value_og) {
-				continue;
-			}
-			// If location of tile we are checking is equal to the location above or below the OG tile
-			if (loc_checking == up_loc || loc_checking == down_loc) {
-				return false; 
-			}
-			// If location of OG tile is NOT 0, 4 , 8, or 12 and the location of tile we are checking is to the left of original
-			// There must be a valid move
-			if (loc_checking == left_loc && (loc != 0 || loc != 4 || loc != 8 || loc != 12)) {
-				return false;
-			} 
-			// If location of OG tile is NOT  3, 7, 12, or 15 and the location of tile we are checking is to the right of original
-			// There must be a valid move
-			if (loc_checking == right_loc && (loc != 3 || loc != 7 || loc != 12 || loc != 15)) {
-				return false;
-			}
-		}
-	}
-	// If no empty spaces and no adjacent tiles with same value return true as game is over
-	return true;
-}
-
-//-------------------- Clear Screen Function --------------------//
+//--------------------- Clear Grid Function ---------------------//
 void clear_grid() {
     
 	short int color;
@@ -1125,14 +1068,6 @@ void wait_for_vsync() {
 }
 
 
-//------------------------ Swap Function ------------------------//
-void swap(int* a, int* b) {
-    int temp = *a;
-    *a = *b;
-    *b = temp;
-}
-
-
 //--------------------- Init Tiles Function ---------------------//
 void init_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, bool *tile_moving) {
 	
@@ -1170,7 +1105,7 @@ void activate_tile(bool *active_tile, int *location_tile, int *value_tile, int *
 		}
 	}
 	
-	// Turn on tile, set location, value, and color
+	// Turn on tile, set location, value, etc.
 	active_tile[tile_id] = true;
 	location_tile[tile_id] = rand_location;
 	value_tile[tile_id] = rand_value;
@@ -1196,7 +1131,7 @@ bool check_location_taken(bool *active_tile, int *location_tile, int location) {
 
 
 //---------------------- Move Tile Function ---------------------//
-void move_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, bool *tile_moving, int direction) {
+void move_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, int *shift_offset_x_prev, int *shift_offset_y_prev, bool *tile_moving, int direction) {
 	
 	// Directions: imagine going counter-clockwise starting at 0 degrees //
 	// 0 = right
@@ -1209,36 +1144,42 @@ void move_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shi
 		return;
 	}
 	
+	// If not currently moving but key has been pressed, store direction in direction_store and start moving
+	else if (!currently_moving && direction != 4) {
+		direction_store = direction;
+		currently_moving = true;
+	}
+	
 	// If movement...
 	int x_offset_inc;
 	int	y_offset_inc;
 	int	location_inc;
 	
 	// Right
-	if (direction == 0) {
-		x_offset_inc = 2;
+	if (direction_store == 0) {
+		x_offset_inc = 1;
 		y_offset_inc = 0;
 		location_inc = 1;
 	}
 	
 	// Up
-	if (direction == 1) {
+	if (direction_store == 1) {
 		x_offset_inc = 0;
-		y_offset_inc = -2;
+		y_offset_inc = -1;
 		location_inc = -4;
 	}
 	
 	// Left
-	if (direction == 2) {
-		x_offset_inc = -2;
+	if (direction_store == 2) {
+		x_offset_inc = -1;
 		y_offset_inc = 0;
 		location_inc = -1;
 	}
 	
 	// Down
-	if (direction == 3) {
+	if (direction_store == 3) {
 		x_offset_inc = 0;
-		y_offset_inc = 2;
+		y_offset_inc = 1;
 		location_inc = 4;
 	}
 	
@@ -1247,60 +1188,70 @@ void move_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shi
 
 		// If active tile isn't moving, check if it should
 		if (active_tile[tile_id] && !tile_moving[tile_id]) {
-			
-			// If tile not at edge
-			if ((direction == 0 && (location_tile[tile_id] + 1) % 4 != 0) ||
-				(direction == 1 && location_tile[tile_id] > 3) ||
-				(direction == 2 && location_tile[tile_id] % 4 != 0) ||
-				(direction == 3 && location_tile[tile_id] < 12)) {
-					
-				tile_moving[tile_id] = true;
-				
-				// If tile in the way, check whether it merges or not
-				for (int tile_id_check = 0; tile_id_check < 16; tile_id_check++) {
-					if (active_tile[tile_id_check] && location_tile[tile_id_check] == location_tile[tile_id] + location_inc && tile_id != tile_id_check) {
-
-						// Tiles match, merge tiles
-						if (value_tile[tile_id_check] != value_tile[tile_id]) {
-							tile_moving[tile_id] = false;
-							break;
-						}
-					}
-				}
-			}
+			tile_moving[tile_id] = tile_should_move(active_tile, location_tile, value_tile, tile_moving, location_inc, tile_id);
 		}
 
 		// If active tile already moving, keep moving to location
 		if (active_tile[tile_id] && tile_moving[tile_id]) {
+			shift_offset_x_prev[tile_id] = shift_offset_x[tile_id];
+			shift_offset_y_prev[tile_id] = shift_offset_y[tile_id];
 			shift_offset_x[tile_id] += x_offset_inc;
 			shift_offset_y[tile_id] += y_offset_inc;
 		}
 
 		// If done moving, check for merge, update location
-		if (shift_offset_x[tile_id] == 53 || shift_offset_x[tile_id] == -53 ||
-		    shift_offset_y[tile_id] == 53 || shift_offset_y[tile_id] == -53) {
+		if (shift_offset_x[tile_id] >= 54 || shift_offset_x[tile_id] <= -54 ||
+		    shift_offset_y[tile_id] >= 54 || shift_offset_y[tile_id] <= -54) {
 			
-			// If tile in the way, check whether it merges or not
-			for (int tile_id_check = 0; tile_id_check < 16; tile_id_check++) {
-				if (active_tile[tile_id_check] && location_tile[tile_id_check] == location_tile[tile_id] + location_inc && tile_id != tile_id_check) {
-
-					// Tiles match, merge tiles
-					if (value_tile[tile_id_check] == value_tile[tile_id]) {
-						merge_tiles(active_tile, location_tile, value_tile, tile_id_check, tile_id);
-						break;
-					}
-				}
-			}
-
 			tile_moving[tile_id] = false;
 			location_tile[tile_id] += location_inc;
 			shift_offset_x[tile_id] = 0;
 			shift_offset_y[tile_id] = 0;
-		}			
+			
+			// If tile in the way, check whether it merges or not
+			for (int tile_id_check = 0; tile_id_check < 16; tile_id_check++) {
+				
+				// If location matches, merge tiles (must have same value)
+				if (active_tile[tile_id_check] && location_tile[tile_id_check] == location_tile[tile_id] && tile_id != tile_id_check) {
+					merge_tiles(active_tile, location_tile, value_tile, tile_id_check, tile_id);
+					break;
+				}
+			}
+		}
 	}
 }
 
-						
+
+//------------------ Tile Should Move Function ------------------//
+bool tile_should_move(bool *active_tile, int *location_tile, int *value_tile, bool *tile_moving, int location_inc, int tile_id) {
+	
+	bool should_move = false;
+	
+	// If tile not at edge
+	if ((direction_store == 0 && (location_tile[tile_id] + 1) % 4 != 0) ||
+		(direction_store == 1 && location_tile[tile_id] > 3) ||
+		(direction_store == 2 && location_tile[tile_id] % 4 != 0) ||
+		(direction_store == 3 && location_tile[tile_id] < 12)) {
+
+		should_move = true;
+
+		// If tile in the way, check whether it merges or not
+		for (int tile_id_check = 0; tile_id_check < 16; tile_id_check++) {
+			if (active_tile[tile_id_check] && location_tile[tile_id_check] == location_tile[tile_id] + location_inc && tile_id != tile_id_check) {
+
+				// If tiles don't match, don't move (else move and merge)
+				if (value_tile[tile_id_check] != value_tile[tile_id]) {
+					should_move = false;
+					break;
+				}
+			}
+		}
+	}
+	
+	return should_move;
+}	
+	
+
 //--------------------- Merge Tiles Function --------------------//
 void merge_tiles(bool *active_tile, int *location_tile, int *value_tile, int tile_id_1, int tile_id_2) {
 	
@@ -1309,6 +1260,109 @@ void merge_tiles(bool *active_tile, int *location_tile, int *value_tile, int til
 		
 		value_tile[tile_id_1] *= 2;
 		active_tile[tile_id_2] = false;
+	}
+}
+
+
+//--------------------- Erase Tiles Function --------------------//
+void erase_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, int *shift_offset_x_prev, int *shift_offset_y_prev, bool *tile_moving, int direction) {
+	
+	int x_start;
+	int y_start;
+	int color = 0x0000;
+	
+	if (currently_moving) {
+	
+		for (int tile_id = 0; tile_id < 16; tile_id++) {
+
+			if (active_tile[tile_id]) {
+
+				// Moving right
+				if (direction_store == 0) {
+
+					// Set starting point for erase
+					x_start = 12 + ((location_tile[tile_id] % 4) * 53 + shift_offset_x_prev[tile_id]);
+					y_start = 17 + ((location_tile[tile_id] / 4) * 53) + shift_offset_y_prev[tile_id];
+														
+					for (int x = x_start; x <= x_start + 1; x++) {
+						for (int y = y_start; y <= y_start + 46; y++) {
+						
+							// Assemble color from background image array
+							color = 0x0000;
+							color = color | background[(320 * 2 * y) + (2 * x) + 1]; // First 8 bits
+							color = color << 8; // Bit shift
+							color = color | background[(320 * 2 * y) + (2 * x)]; // Last 8 bits
+
+							plot_pixel(x, y, color);
+						}
+					}
+				}
+				
+				// Moving up
+				if (direction_store == 1) {
+
+					// Set starting point for erase
+					x_start = 12 + ((location_tile[tile_id] % 4) * 53 + shift_offset_x_prev[tile_id]);
+					y_start = 17 + ((location_tile[tile_id] / 4) * 53) + shift_offset_y_prev[tile_id] + 46;
+															
+					for (int x = x_start; x <= x_start + 46; x++) {
+						for (int y = y_start; y >= y_start - 1; y--) {
+						
+							// Assemble color from background image array
+							color = 0x0000;
+							color = color | background[(320 * 2 * y) + (2 * x) + 1]; // First 8 bits
+							color = color << 8; // Bit shift
+							color = color | background[(320 * 2 * y) + (2 * x)]; // Last 8 bits
+
+							plot_pixel(x, y, color);
+						}
+					}
+				}
+				
+				// Moving left
+				if (direction_store == 2) {
+
+					// Set starting point for erase
+					x_start = 12 + ((location_tile[tile_id] % 4) * 53 + shift_offset_x_prev[tile_id]) + 46;
+					y_start = 17 + ((location_tile[tile_id] / 4) * 53) + shift_offset_y_prev[tile_id];
+															
+					for (int x = x_start; x >= x_start - 1; x--) {
+						for (int y = y_start; y <= y_start + 46; y++) {
+						
+							// Assemble color from background image array
+							color = 0x0000;
+							color = color | background[(320 * 2 * y) + (2 * x) + 1]; // First 8 bits
+							color = color << 8; // Bit shift
+							color = color | background[(320 * 2 * y) + (2 * x)]; // Last 8 bits
+
+							plot_pixel(x, y, color);
+						}
+					}
+				}
+				
+				// Moving down
+				if (direction_store == 3) {
+
+					// Set starting point for erase
+					x_start = 12 + ((location_tile[tile_id] % 4) * 53 + shift_offset_x_prev[tile_id]);
+					y_start = 17 + ((location_tile[tile_id] / 4) * 53) + shift_offset_y_prev[tile_id];
+															
+					for (int x = x_start; x <= x_start + 46; x++) {
+						for (int y = y_start; y <= y_start + 1; y++) {
+						
+							// Assemble color from background image array
+							color = 0x0000;
+							color = color | background[(320 * 2 * y) + (2 * x) + 1]; // First 8 bits
+							color = color << 8; // Bit shift
+							color = color | background[(320 * 2 * y) + (2 * x)]; // Last 8 bits
+
+							plot_pixel(x, y, color);
+						}
+					}
+				}
+
+			}
+		}
 	}
 }
 
@@ -1481,4 +1535,55 @@ int chooseDirection(int dirCode) {
 	else {
 		return 4;
 	}
+}
+
+
+//------------------ Check Game Over Function ------------------//
+bool checkGameOver(bool *active_tile, int *location_tile, int *value_tile) {
+	// Check if there are any empty spaces first
+	for (int i = 0; i < 16; i++) {
+		// if a tile isnt active then board has empty spaces so return false
+		if (active_tile[i] == false) {
+			return false;
+		}
+	}
+
+	// If not empty spaces, check if there are any adjacent tiles with same value
+	int up_loc = 16;
+	int down_loc = 16;
+	int left_loc = 16;
+	int right_loc = 16;
+	int loc;
+	for (int i = 0; i < 16; i++) {
+		loc = location_tile[i];
+		up_loc = location_tile[i] - 4;
+		down_loc = location_tile[i] + 4; 
+		left_loc = location_tile[i] - 1;
+		right_loc = location_tile[i] + 1;
+		int value_og = value_tile[i];
+		for (int z = 0; z < 16; z++) {
+			int loc_checking = location_tile[z];
+			int value_checking = value_tile[z];
+			//  If value of tile we are checking isnt equal to value of original (OG) tile, no point seeing if it is adjacent to OG tile
+			if (value_checking != value_og) {
+				continue;
+			}
+			// If location of tile we are checking is equal to the location above or below the OG tile
+			if (loc_checking == up_loc || loc_checking == down_loc) {
+				return false; 
+			}
+			// If location of OG tile is NOT 0, 4 , 8, or 12 and the location of tile we are checking is to the left of original
+			// There must be a valid move
+			if (loc_checking == left_loc && (loc != 0 || loc != 4 || loc != 8 || loc != 12)) {
+				return false;
+			} 
+			// If location of OG tile is NOT  3, 7, 12, or 15 and the location of tile we are checking is to the right of original
+			// There must be a valid move
+			if (loc_checking == right_loc && (loc != 3 || loc != 7 || loc != 12 || loc != 15)) {
+				return false;
+			}
+		}
+	}
+	// If no empty spaces and no adjacent tiles with same value return true as game is over
+	return true;
 }
