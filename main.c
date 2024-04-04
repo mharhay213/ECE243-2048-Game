@@ -913,7 +913,7 @@ bool check_location_taken(bool *active_tile, int *location_tile, int location);
 void move_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, int *shift_offset_x_prev, int *shift_offset_y_prev, bool *tile_moving, int direction);
 bool tile_should_move(bool *active_tile, int *location_tile, int *value_tile, bool *tile_moving, int location_inc, int tile_id);
 void merge_tiles(bool *active_tile, int *location_tile, int *value_tile, int tile_id_1, int tile_id_2);
-void erase_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, int *shift_offset_x_prev, int *shift_offset_y_prev, bool *tile_moving, int direction);
+void erase_tiles(bool *active_tile, int *location_tile, int *shift_offset_x_prev, int *shift_offset_y_prev, bool *tile_moving, int direction);
 void draw_tiles(const bool *active_tile, const int *value_tile, const int *location_tile, int *shift_offset_x, int *shift_offset_y);
 
 // Keyboard
@@ -1006,12 +1006,12 @@ int main(void) {
 			activate_tile(active_tile, location_tile, value_tile, shift_offset_x, shift_offset_y, tile_moving, tile_id);
 			spawn_tile = false;
 		}
-		
+
 		// Draw tiles
 		draw_tiles(active_tile, value_tile, location_tile, shift_offset_x, shift_offset_y);
-		
+				
 		// Erase old tiles
-		erase_tiles(active_tile, location_tile, value_tile, shift_offset_x, shift_offset_y, shift_offset_x_prev, shift_offset_y_prev, tile_moving, direction);
+		erase_tiles(active_tile, location_tile, shift_offset_x_prev, shift_offset_y_prev, tile_moving, direction);
 				
 		// Swap front and back buffers
         wait_for_vsync(); 
@@ -1200,13 +1200,15 @@ void move_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shi
 		}
 
 		// If done moving, check for merge, update location
-		if (shift_offset_x[tile_id] >= 54 || shift_offset_x[tile_id] <= -54 ||
-		    shift_offset_y[tile_id] >= 54 || shift_offset_y[tile_id] <= -54) {
+		if (shift_offset_x[tile_id] >= 53 || shift_offset_x[tile_id] <= -53 ||
+		    shift_offset_y[tile_id] >= 53 || shift_offset_y[tile_id] <= -53) {
 			
 			tile_moving[tile_id] = false;
 			location_tile[tile_id] += location_inc;
 			shift_offset_x[tile_id] = 0;
 			shift_offset_y[tile_id] = 0;
+			shift_offset_x_prev[tile_id] = 0;
+			shift_offset_y_prev[tile_id] = 0;
 			
 			// If tile in the way, check whether it merges or not
 			for (int tile_id_check = 0; tile_id_check < 16; tile_id_check++) {
@@ -1265,103 +1267,100 @@ void merge_tiles(bool *active_tile, int *location_tile, int *value_tile, int til
 
 
 //--------------------- Erase Tiles Function --------------------//
-void erase_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, int *shift_offset_x_prev, int *shift_offset_y_prev, bool *tile_moving, int direction) {
+void erase_tiles(bool *active_tile, int *location_tile, int *shift_offset_x_prev, int *shift_offset_y_prev, bool *tile_moving, int direction) {
 	
 	int x_start;
 	int y_start;
 	int color = 0x0000;
-	
-	if (currently_moving) {
-	
-		for (int tile_id = 0; tile_id < 16; tile_id++) {
+		
+	for (int tile_id = 0; tile_id < 16; tile_id++) {
 
-			if (active_tile[tile_id]) {
+		if (active_tile[tile_id] && (shift_offset_x_prev[tile_id] != 0 || shift_offset_y_prev[tile_id] != 0)) {
 
-				// Moving right
-				if (direction_store == 0) {
+			// Moving right
+			if (direction_store == 0) {
 
-					// Set starting point for erase
-					x_start = 12 + ((location_tile[tile_id] % 4) * 53 + shift_offset_x_prev[tile_id]);
-					y_start = 17 + ((location_tile[tile_id] / 4) * 53) + shift_offset_y_prev[tile_id];
-														
-					for (int x = x_start; x <= x_start + 1; x++) {
-						for (int y = y_start; y <= y_start + 46; y++) {
-						
-							// Assemble color from background image array
-							color = 0x0000;
-							color = color | background[(320 * 2 * y) + (2 * x) + 1]; // First 8 bits
-							color = color << 8; // Bit shift
-							color = color | background[(320 * 2 * y) + (2 * x)]; // Last 8 bits
+				// Set starting point for erase
+				x_start = 12 + ((location_tile[tile_id] % 4) * 53 + shift_offset_x_prev[tile_id] - 1);
+				y_start = 17 + ((location_tile[tile_id] / 4) * 53) + shift_offset_y_prev[tile_id];
 
-							plot_pixel(x, y, color);
-						}
+				for (int x = x_start; x <= x_start + 1; x++) {
+					for (int y = y_start; y <= y_start + 46; y++) {
+
+						// Assemble color from background image array
+						color = 0x0000;
+						color = color | background[(320 * 2 * y) + (2 * x) + 1]; // First 8 bits
+						color = color << 8; // Bit shift
+						color = color | background[(320 * 2 * y) + (2 * x)]; // Last 8 bits
+
+						plot_pixel(x, y, color);
 					}
 				}
-				
-				// Moving up
-				if (direction_store == 1) {
-
-					// Set starting point for erase
-					x_start = 12 + ((location_tile[tile_id] % 4) * 53 + shift_offset_x_prev[tile_id]);
-					y_start = 17 + ((location_tile[tile_id] / 4) * 53) + shift_offset_y_prev[tile_id] + 46;
-															
-					for (int x = x_start; x <= x_start + 46; x++) {
-						for (int y = y_start; y >= y_start - 1; y--) {
-						
-							// Assemble color from background image array
-							color = 0x0000;
-							color = color | background[(320 * 2 * y) + (2 * x) + 1]; // First 8 bits
-							color = color << 8; // Bit shift
-							color = color | background[(320 * 2 * y) + (2 * x)]; // Last 8 bits
-
-							plot_pixel(x, y, color);
-						}
-					}
-				}
-				
-				// Moving left
-				if (direction_store == 2) {
-
-					// Set starting point for erase
-					x_start = 12 + ((location_tile[tile_id] % 4) * 53 + shift_offset_x_prev[tile_id]) + 46;
-					y_start = 17 + ((location_tile[tile_id] / 4) * 53) + shift_offset_y_prev[tile_id];
-															
-					for (int x = x_start; x >= x_start - 1; x--) {
-						for (int y = y_start; y <= y_start + 46; y++) {
-						
-							// Assemble color from background image array
-							color = 0x0000;
-							color = color | background[(320 * 2 * y) + (2 * x) + 1]; // First 8 bits
-							color = color << 8; // Bit shift
-							color = color | background[(320 * 2 * y) + (2 * x)]; // Last 8 bits
-
-							plot_pixel(x, y, color);
-						}
-					}
-				}
-				
-				// Moving down
-				if (direction_store == 3) {
-
-					// Set starting point for erase
-					x_start = 12 + ((location_tile[tile_id] % 4) * 53 + shift_offset_x_prev[tile_id]);
-					y_start = 17 + ((location_tile[tile_id] / 4) * 53) + shift_offset_y_prev[tile_id];
-															
-					for (int x = x_start; x <= x_start + 46; x++) {
-						for (int y = y_start; y <= y_start + 1; y++) {
-						
-							// Assemble color from background image array
-							color = 0x0000;
-							color = color | background[(320 * 2 * y) + (2 * x) + 1]; // First 8 bits
-							color = color << 8; // Bit shift
-							color = color | background[(320 * 2 * y) + (2 * x)]; // Last 8 bits
-
-							plot_pixel(x, y, color);
-						}
-					}
-				}
-
 			}
+
+			// Moving up
+			if (direction_store == 1) {
+
+				// Set starting point for erase
+				x_start = 12 + ((location_tile[tile_id] % 4) * 53 + shift_offset_x_prev[tile_id]);
+				y_start = 17 + ((location_tile[tile_id] / 4) * 53) + shift_offset_y_prev[tile_id] + 47;
+
+				for (int x = x_start; x <= x_start + 46; x++) {
+					for (int y = y_start; y >= y_start - 1; y--) {
+
+						// Assemble color from background image array
+						color = 0x0000;
+						color = color | background[(320 * 2 * y) + (2 * x) + 1]; // First 8 bits
+						color = color << 8; // Bit shift
+						color = color | background[(320 * 2 * y) + (2 * x)]; // Last 8 bits
+
+						plot_pixel(x, y, color);
+					}
+				}
+			}
+
+			// Moving left
+			if (direction_store == 2) {
+
+				// Set starting point for erase
+				x_start = 12 + ((location_tile[tile_id] % 4) * 53 + shift_offset_x_prev[tile_id]) + 47;
+				y_start = 17 + ((location_tile[tile_id] / 4) * 53) + shift_offset_y_prev[tile_id];
+
+				for (int x = x_start; x >= x_start - 1; x--) {
+					for (int y = y_start; y <= y_start + 46; y++) {
+
+						// Assemble color from background image array
+						color = 0x0000;
+						color = color | background[(320 * 2 * y) + (2 * x) + 1]; // First 8 bits
+						color = color << 8; // Bit shift
+						color = color | background[(320 * 2 * y) + (2 * x)]; // Last 8 bits
+
+						plot_pixel(x, y, color);
+					}
+				}
+			}
+
+			// Moving down
+			if (direction_store == 3) {
+
+				// Set starting point for erase
+				x_start = 12 + ((location_tile[tile_id] % 4) * 53 + shift_offset_x_prev[tile_id]);
+				y_start = 17 + ((location_tile[tile_id] / 4) * 53) + shift_offset_y_prev[tile_id] - 1;
+
+				for (int x = x_start; x <= x_start + 46; x++) {
+					for (int y = y_start; y <= y_start + 1; y++) {
+
+						// Assemble color from background image array
+						color = 0x0000;
+						color = color | background[(320 * 2 * y) + (2 * x) + 1]; // First 8 bits
+						color = color << 8; // Bit shift
+						color = color | background[(320 * 2 * y) + (2 * x)]; // Last 8 bits
+
+						plot_pixel(x, y, color);
+					}
+				}
+			}
+
 		}
 	}
 }
