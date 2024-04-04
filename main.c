@@ -12,9 +12,8 @@ volatile int *buffer_reg = (int *)0xFF203020;
 short int Buffer1[240][512]; // 240 rows, 512 (320 + padding) columns
 short int Buffer2[240][512];
 
-// Glopbal game variables
+// Global game variables
 bool currently_moving = false;
-int shift_offset_x, shift_offset_y;
 
 // Background
 const short int background[76800 * 2] = {
@@ -908,17 +907,17 @@ void wait_for_vsync();
 void swap(int* a, int* b);
 
 // Tiles
-void init_tiles(bool *active_tile, int *location_tile, int *value_tile);
-void activate_tile(bool *active_tile, int *location_tile, int *value_tile, int tile_id);
+void init_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, bool *tile_moving);
+void activate_tile(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, bool *tile_moving, int tile_id);
 bool check_location_taken(bool *active_tile, int *location_tile, int location);
-void move_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, int direction);
+void move_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, bool *tile_moving, int direction);
 void merge_tiles(bool *active_tile, int *location_tile, int *value_tile, int tile_id_1, int tile_id_2);
 void draw_tiles(const bool *active_tile, const int *value_tile, const int *location_tile, int *shift_offset_x, int *shift_offset_y);
 
 // Keyboard
 int chooseDirection(int dirCode);
 
-//checking Win
+// Checking Win
 bool checkGameOver(bool *active_tile, int *location_tile, int *value_tile);
 
 
@@ -941,13 +940,9 @@ int main(void) {
 	int value_tile[16];
 	int shift_offset_x[16];
 	int shift_offset_y[16];
-	bool spawn_tile;
-	
-	for (int tile_id = 0; tile_id < 16; tile_id++) {
-		shift_offset_x[tile_id] = 0;
-		shift_offset_x[tile_id] = 0;
-	}
-	
+	bool tile_moving[16];
+	bool spawn_tile = false;
+
 	// Declare keyboard variables
 	struct key_PIT *const keyboard = ((struct key_PIT *) 0xFF200100);
 	int PS2_data;
@@ -955,7 +950,7 @@ int main(void) {
 	int direction = 4;
 	
 	// Initialize tiles
-	init_tiles(active_tile, location_tile, value_tile);
+	init_tiles(active_tile, location_tile, value_tile, shift_offset_x, shift_offset_y, tile_moving);
 	
     // Set front pixel buffer to Buffer 1
     *(buffer_reg + 1) = (int) &Buffer1; // first store the address in the back buffer					
@@ -971,7 +966,7 @@ int main(void) {
     pixel_buffer_start = *(buffer_reg + 1); // we draw on the back buffer
     
 	clear_grid();
-
+	
 	// Loop infinitely
     while (1) {
 		
@@ -987,25 +982,31 @@ int main(void) {
 				
 				// Update direction
 				direction = chooseDirection(command);
+				currently_moving = true;
 				spawn_tile = true;
-			}		
+			}
 		}
 		
 		else {
 			direction = 4;
 		}
-		
-		// Wait
-		for (int i = 0; i < 1000; i++) {
-			continue;
-		}
-		
+
 		// Erase old tiles (CAN OPTIMIZE LATER)
 		clear_grid();
 
 		// Move tiles
-		move_tiles(active_tile, location_tile, value_tile, shift_offset_x, shift_offset_y, direction);
+		move_tiles(active_tile, location_tile, value_tile, shift_offset_x, shift_offset_y, tile_moving, direction);
 		
+		// Set currently_moving
+		currently_moving = false;
+		for (int tile_id = 0; tile_id < 16; tile_id++) {
+			if (active_tile[tile_id] && tile_moving[tile_id]) {		
+				currently_moving = true;
+				break;
+			}
+		}
+		
+		/*
 		// If tiles done moving and tile to be spawned, activate it
 		if (!currently_moving && spawn_tile) {
 			
@@ -1013,8 +1014,9 @@ int main(void) {
 			while (tile_id < 15 && active_tile[tile_id]) {
 				tile_id++;
 			}
-			activate_tile(active_tile, location_tile, value_tile, tile_id);
+			activate_tile(active_tile, location_tile, value_tile, shift_offset_x, shift_offset_y, tile_moving, tile_id);
 		}
+		*/
 		
 		// Draw tiles
 		draw_tiles(active_tile, value_tile, location_tile, shift_offset_x, shift_offset_y);
@@ -1132,13 +1134,13 @@ void swap(int* a, int* b) {
 
 
 //--------------------- Init Tiles Function ---------------------//
-void init_tiles(bool *active_tile, int *location_tile, int *value_tile) {
+void init_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, bool *tile_moving) {
 	
 	// Activate first tile, deactivate the rest
 	for (int tile_id = 0; tile_id < 16; tile_id++) {
 		
 		if (tile_id == 0) {
-			activate_tile(active_tile, location_tile, value_tile, tile_id);
+			activate_tile(active_tile, location_tile, value_tile, shift_offset_x, shift_offset_y, tile_moving, tile_id);
 		}
 		
 		else {
@@ -1149,7 +1151,7 @@ void init_tiles(bool *active_tile, int *location_tile, int *value_tile) {
 
 
 //------------------- Activate Tile Function --------------------//
-void activate_tile(bool *active_tile, int *location_tile, int *value_tile, int tile_id) { 
+void activate_tile(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, bool *tile_moving, int tile_id) { 
 	
 	int rand_location;
 	int rand_value;
@@ -1172,6 +1174,9 @@ void activate_tile(bool *active_tile, int *location_tile, int *value_tile, int t
 	active_tile[tile_id] = true;
 	location_tile[tile_id] = rand_location;
 	value_tile[tile_id] = rand_value;
+	shift_offset_x[tile_id] = 0;
+	shift_offset_y[tile_id] = 0;
+	tile_moving[tile_id] = false;
 }
 
 
@@ -1180,10 +1185,8 @@ bool check_location_taken(bool *active_tile, int *location_tile, int location) {
 	
 	// If an active tile already occupies location, return true
 	for (int tile_id = 0; tile_id < 16; tile_id++) {
-		if (active_tile[tile_id]) {
-			if (location == location_tile[tile_id]) {
+		if (active_tile[tile_id] && location == location_tile[tile_id]) {
 				return true;
-			}
 		}
 	}
 	
@@ -1193,7 +1196,7 @@ bool check_location_taken(bool *active_tile, int *location_tile, int location) {
 
 
 //---------------------- Move Tile Function ---------------------//
-void move_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, int direction) {
+void move_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, bool *tile_moving, int direction) {
 	
 	// Directions: imagine going counter-clockwise starting at 0 degrees //
 	// 0 = right
@@ -1202,159 +1205,98 @@ void move_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shi
 	// 3 = down
 	
 	// If direction == 4, no movement, return
-	if (direction == 4) {
+	if (!currently_moving && direction == 4) {
 		return;
 	}
 	
 	// If movement...
-	currently_moving = true;
+	int x_offset_inc;
+	int	y_offset_inc;
+	int	location_inc;
 	
 	// Right
 	if (direction == 0) {
-
-		for (int tile_id = 0; tile_id < 16; tile_id++) {
-			
-			// If not at edge
-			if (active_tile[tile_id] && (location_tile[tile_id] + 1) % 4 != 0) {
-				
-				// If tile in the way, check whether it merges or not
-				for (int tile_id_check = 0; tile_id_check < 16; tile_id_check++) {
-					if (active_tile[tile_id_check] && location_tile[tile_id_check] == location_tile[tile_id] + 1 && tile_id != tile_id_check) {
-						
-						// Tiles match, merge tiles
-						if (value_tile[tile_id_check] == value_tile[tile_id]) {
-							merge_tiles(active_tile, location_tile, value_tile, tile_id_check, tile_id);
-							break;
-						}
-							
-						// Tiles do not match, do not move
-						else {
-							shift_offset_x[tile_id]--;
-						}
-					}
-				}
-				
-				shift_offset_x[tile_id]++;
-				
-				// If done moving, set currently moving to false, update location
-				if (shift_offset_x[tile_id] == 53) {
-					currently_moving = false;
-					location_tile[tile_id] += 1;
-					shift_offset_x[tile_id] = 0;
-				}
-			}
-		}
+		x_offset_inc = 2;
+		y_offset_inc = 0;
+		location_inc = 1;
 	}
-
+	
 	// Up
-	else if (direction == 1) {
-		
-		for (int tile_id = 0; tile_id < 16; tile_id++) {
-			
-			// If not at edge
-			if (active_tile[tile_id] && location_tile[tile_id] > 3) {
-				
-				// If tile in the way, check whether it merges or not
-				for (int tile_id_check = 0; tile_id_check < 16; tile_id_check++) {
-					if (active_tile[tile_id_check] && location_tile[tile_id_check] == location_tile[tile_id] - 4 && tile_id != tile_id_check) {
-						
-						// Tiles match, merge tiles
-						if (value_tile[tile_id_check] == value_tile[tile_id]) {
-							merge_tiles(active_tile, location_tile, value_tile, tile_id_check, tile_id);
-							break;
-						}
-							
-						// Tiles do not match, offset tile move
-						else {
-							shift_offset_y[tile_id]++;
-						}
-					}
-				}
-				
-				shift_offset_y[tile_id]--;
-				
-				// If done moving, set currently moving to false, update location
-				if (shift_offset_y[tile_id] == 53) {
-					currently_moving = false;
-					location_tile[tile_id] -= 4;
-					shift_offset_y[tile_id] = 0;
-				}
-			}
-		}
+	if (direction == 1) {
+		x_offset_inc = 0;
+		y_offset_inc = -2;
+		location_inc = -4;
 	}
-
+	
 	// Left
-	else if (direction == 2) {
-
-		for (int tile_id = 0; tile_id < 16; tile_id++) {
-			
-			// If not at edge
-			if (active_tile[tile_id] && location_tile[tile_id] % 4 != 0) {
-				
-				// If tile in the way, check whether it merges or not
-				for (int tile_id_check = 0; tile_id_check < 16; tile_id_check++) {
-					if (active_tile[tile_id_check] && location_tile[tile_id_check] == location_tile[tile_id] - 1 && tile_id != tile_id_check) {
-						
-						// Tiles match, merge tiles
-						if (value_tile[tile_id_check] == value_tile[tile_id]) {
-							merge_tiles(active_tile, location_tile, value_tile, tile_id_check, tile_id);
-							break;
-						}
-							
-						// Tiles do not match, offset tile move
-						else {
-							shift_offset_x[tile_id]++;
-						}
-					}
-				}
-				
-				shift_offset_x[tile_id]--;
-				
-				// If done moving, set currently moving to false, update location
-				if (shift_offset_x[tile_id] == 53) {
-					currently_moving = false;
-					location_tile[tile_id] -= 1;
-					shift_offset_x[tile_id] = 0;
-				}
-			}
-		}
+	if (direction == 2) {
+		x_offset_inc = -2;
+		y_offset_inc = 0;
+		location_inc = -1;
 	}
-
+	
 	// Down
-	else if (direction == 3) {
+	if (direction == 3) {
+		x_offset_inc = 0;
+		y_offset_inc = 2;
+		location_inc = 4;
+	}
+	
+	// Move tile accordingly
+	for (int tile_id = 0; tile_id < 16; tile_id++) {
 
-		for (int tile_id = 0; tile_id < 16; tile_id++) {
+		// If active tile isn't moving, check if it should
+		if (active_tile[tile_id] && !tile_moving[tile_id]) {
 			
-			// If not at edge
-			if (active_tile[tile_id] && location_tile[tile_id] < 12) {
+			// If tile not at edge
+			if ((direction == 0 && (location_tile[tile_id] + 1) % 4 != 0) ||
+				(direction == 1 && location_tile[tile_id] > 3) ||
+				(direction == 2 && location_tile[tile_id] % 4 != 0) ||
+				(direction == 3 && location_tile[tile_id] < 12)) {
+					
+				tile_moving[tile_id] = true;
 				
 				// If tile in the way, check whether it merges or not
 				for (int tile_id_check = 0; tile_id_check < 16; tile_id_check++) {
-					if (active_tile[tile_id_check] && location_tile[tile_id_check] == location_tile[tile_id] + 4 && tile_id != tile_id_check) {
-						
+					if (active_tile[tile_id_check] && location_tile[tile_id_check] == location_tile[tile_id] + location_inc && tile_id != tile_id_check) {
+
 						// Tiles match, merge tiles
-						if (value_tile[tile_id_check] == value_tile[tile_id]) {
-							merge_tiles(active_tile, location_tile, value_tile, tile_id_check, tile_id);
+						if (value_tile[tile_id_check] != value_tile[tile_id]) {
+							tile_moving[tile_id] = false;
 							break;
-						}
-							
-						// Tiles do not match, offset tile move
-						else {
-							shift_offset_y[tile_id]--;
 						}
 					}
 				}
-				
-				shift_offset_y[tile_id]++;
-				
-				// If done moving, set currently moving to false, update location
-				if (shift_offset_y[tile_id] == 53) {
-					currently_moving = false;
-					location_tile[tile_id] += 4;
-					shift_offset_y[tile_id] = 0;
-				}
 			}
 		}
+
+		// If active tile already moving, keep moving to location
+		if (active_tile[tile_id] && tile_moving[tile_id]) {
+			shift_offset_x[tile_id] += x_offset_inc;
+			shift_offset_y[tile_id] += y_offset_inc;
+		}
+
+		// If done moving, check for merge, update location
+		if (shift_offset_x[tile_id] == 53 || shift_offset_x[tile_id] == -53 ||
+		    shift_offset_y[tile_id] == 53 || shift_offset_y[tile_id] == -53) {
+			
+			// If tile in the way, check whether it merges or not
+			for (int tile_id_check = 0; tile_id_check < 16; tile_id_check++) {
+				if (active_tile[tile_id_check] && location_tile[tile_id_check] == location_tile[tile_id] + location_inc && tile_id != tile_id_check) {
+
+					// Tiles match, merge tiles
+					if (value_tile[tile_id_check] == value_tile[tile_id]) {
+						merge_tiles(active_tile, location_tile, value_tile, tile_id_check, tile_id);
+						break;
+					}
+				}
+			}
+
+			tile_moving[tile_id] = false;
+			location_tile[tile_id] += location_inc;
+			shift_offset_x[tile_id] = 0;
+			shift_offset_y[tile_id] = 0;
+		}			
 	}
 }
 
