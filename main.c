@@ -1391,7 +1391,7 @@ void init_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shi
 void activate_tile(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, bool *tile_moving, bool *tile_merged, int *stop_moving_next_cycle, int tile_id);
 bool check_location_taken(bool *active_tile, int *location_tile, int location);
 void move_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, int *shift_offset_x_prev, int *shift_offset_y_prev, bool *tile_moving, bool *tile_merged, int *stop_moving_next_cycle, int direction);
-bool tile_should_move(bool *active_tile, int *location_tile, int *value_tile, bool *tile_moving, bool *tile_merged, int location_inc, int tile_id);
+bool tile_should_move(bool *active_tile, int *location_tile, int *value_tile, bool *tile_moving, bool *tile_merged, int *stop_moving_next_cycle, int location_inc, int tile_id, int location);
 void merge_tiles(bool *active_tile, int *location_tile, int *value_tile, bool *tile_merged, int tile_id_1, int tile_id_2);
 void erase_tiles(bool *active_tile, int *location_tile, int *shift_offset_x_prev, int *shift_offset_y_prev, bool *tile_moving, int direction);
 void draw_tiles(const bool *active_tile, const int *value_tile, const int *location_tile, int *shift_offset_x, int *shift_offset_y, bool *tile_moving, bool *tile_merged, int *stop_moving_next_cycle);
@@ -1713,7 +1713,7 @@ void move_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shi
 
 		// If active tile isn't moving, check if it should
 		if (active_tile[tile_id] && !tile_moving[tile_id]) {
-			tile_moving[tile_id] = tile_should_move(active_tile, location_tile, value_tile, tile_moving, tile_merged, location_inc, tile_id);
+			tile_moving[tile_id] = tile_should_move(active_tile, location_tile, value_tile, tile_moving, tile_merged, stop_moving_next_cycle, location_inc, tile_id, location_tile[tile_id]);
 		}
 
 		// If active tile already moving, keep moving to location
@@ -1729,7 +1729,7 @@ void move_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shi
 		    shift_offset_y[tile_id] >= 53 || shift_offset_y[tile_id] <= -53) {
 			
 			location_tile[tile_id] += location_inc;
-			tile_moving[tile_id] = tile_should_move(active_tile, location_tile, value_tile, tile_moving, tile_merged, location_inc, tile_id);
+			tile_moving[tile_id] = tile_should_move(active_tile, location_tile, value_tile, tile_moving, tile_merged, stop_moving_next_cycle, location_inc, tile_id, location_tile[tile_id]);
 			stop_moving_next_cycle[tile_id] = 1;
 			shift_offset_x[tile_id] = 0;
 			shift_offset_y[tile_id] = 0;
@@ -1751,7 +1751,7 @@ void move_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shi
 
 
 //------------------ Tile Should Move Function ------------------//
-bool tile_should_move(bool *active_tile, int *location_tile, int *value_tile, bool *tile_moving, bool *tile_merged, int location_inc, int tile_id) {
+bool tile_should_move(bool *active_tile, int *location_tile, int *value_tile, bool *tile_moving, bool *tile_merged, int *stop_moving_next_cycle, int location_inc, int tile_id, int location) {
 	
 	bool should_move = false;
 	
@@ -1760,10 +1760,10 @@ bool tile_should_move(bool *active_tile, int *location_tile, int *value_tile, bo
 	}
 	
 	// If tile not at edge
-	if ((direction_store == 0 && (location_tile[tile_id] + 1) % 4 != 0) ||
-		(direction_store == 1 && location_tile[tile_id] > 3) ||
-		(direction_store == 2 && location_tile[tile_id] % 4 != 0) ||
-		(direction_store == 3 && location_tile[tile_id] < 12)) {
+	if ((direction_store == 0 && (location + 1) % 4 != 0) ||
+		(direction_store == 1 && location > 3) ||
+		(direction_store == 2 && location % 4 != 0) ||
+		(direction_store == 3 && location < 12)) {
 		
 		should_move = true;
 		
@@ -1773,7 +1773,9 @@ bool tile_should_move(bool *active_tile, int *location_tile, int *value_tile, bo
 
 				// If tiles don't match, don't move (else move and merge)
 				if (value_tile[tile_id_check] != value_tile[tile_id] && 
-					!tile_should_move(active_tile, location_tile, value_tile, tile_moving, tile_merged, location_inc, tile_id_check)) {
+					((stop_moving_next_cycle[tile_id_check] > 0 && !tile_should_move(active_tile, location_tile, value_tile, tile_moving, tile_merged, stop_moving_next_cycle, location_inc, tile_id_check, location_tile[tile_id_check])) ||
+					 (stop_moving_next_cycle[tile_id_check] < 1 && !tile_should_move(active_tile, location_tile, value_tile, tile_moving, tile_merged, stop_moving_next_cycle, location_inc, tile_id_check, location_tile[tile_id_check] + location_inc)) ||
+					 (!tile_moving[tile_id_check] && !tile_should_move(active_tile, location_tile, value_tile, tile_moving, tile_merged, stop_moving_next_cycle, location_inc, tile_id_check, location_tile[tile_id_check])))) {
 					should_move = false;
 					break;
 				}
