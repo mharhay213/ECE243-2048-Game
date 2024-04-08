@@ -1387,21 +1387,21 @@ void plot_pixel(int x, int y, short int color);
 void wait_for_vsync();
 
 // Tiles
-void init_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, bool *tile_moving, bool *tile_merged);
-void activate_tile(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, bool *tile_moving, bool *tile_merged, int tile_id);
+void init_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, bool *tile_moving, bool *tile_merged, int *stop_moving_next_cycle);
+void activate_tile(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, bool *tile_moving, bool *tile_merged, int *stop_moving_next_cycle, int tile_id);
 bool check_location_taken(bool *active_tile, int *location_tile, int location);
-void move_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, int *shift_offset_x_prev, int *shift_offset_y_prev, bool *tile_moving, bool *tile_merged, int direction);
+void move_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, int *shift_offset_x_prev, int *shift_offset_y_prev, bool *tile_moving, bool *tile_merged, int *stop_moving_next_cycle, int direction);
 bool tile_should_move(bool *active_tile, int *location_tile, int *value_tile, bool *tile_moving, bool *tile_merged, int location_inc, int tile_id);
 void merge_tiles(bool *active_tile, int *location_tile, int *value_tile, bool *tile_merged, int tile_id_1, int tile_id_2);
 void erase_tiles(bool *active_tile, int *location_tile, int *shift_offset_x_prev, int *shift_offset_y_prev, bool *tile_moving, int direction);
-void draw_tiles(const bool *active_tile, const int *value_tile, const int *location_tile, int *shift_offset_x, int *shift_offset_y);
+void draw_tiles(const bool *active_tile, const int *value_tile, const int *location_tile, int *shift_offset_x, int *shift_offset_y, bool *tile_moving, bool *tile_merged, int *stop_moving_next_cycle);
 
 // Keyboard
 int chooseDirection(int dirCode);
 
 // Checking Win and Game Over Screen
 bool checkGameOver(bool *active_tile, int *location_tile, int *value_tile);
-void gameIsOver(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, bool *tile_moving, bool *tile_merged);
+void gameIsOver(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, bool *tile_moving, bool *tile_merged, int *stop_moving_next_cycle);
 
 // Audio function
 void audio_player(const int *audio); 
@@ -1448,6 +1448,7 @@ int main(void) {
 	int shift_offset_y_prev[16];
 	bool tile_moving[16];
 	bool tile_merged[16];
+	int stop_moving_next_cycle[16];
 	bool spawn_tile = false;
 
 	// Declare keyboard variables
@@ -1456,7 +1457,7 @@ int main(void) {
 	int direction = 4;
 	
 	// Initialize tiles
-	init_tiles(active_tile, location_tile, value_tile, shift_offset_x, shift_offset_y, tile_moving, tile_merged);
+	init_tiles(active_tile, location_tile, value_tile, shift_offset_x, shift_offset_y, tile_moving, tile_merged, stop_moving_next_cycle);
 	
     // Set front pixel buffer to Buffer 1
     *(buffer_reg + 1) = (int) &Buffer1; // first store the address in the back buffer					
@@ -1489,9 +1490,9 @@ int main(void) {
 		}
 
 		// Move tiles
-		move_tiles(active_tile, location_tile, value_tile, shift_offset_x, shift_offset_y, shift_offset_x_prev, shift_offset_y_prev, tile_moving, tile_merged, direction);
+		move_tiles(active_tile, location_tile, value_tile, shift_offset_x, shift_offset_y, shift_offset_x_prev, shift_offset_y_prev, tile_moving, tile_merged, stop_moving_next_cycle, direction);
 		
-		// Set currently_moving
+		// Set currently_moving and reset stop_moving_next_cycle
 		currently_moving = false;
 		direction = 4;
 		for (int tile_id = 0; tile_id < 16; tile_id++) {
@@ -1499,6 +1500,14 @@ int main(void) {
 				currently_moving = true;
 				spawn_tile = true;
 				break;
+			}
+			
+			if (stop_moving_next_cycle[tile_id] > 0) {
+				stop_moving_next_cycle[tile_id]++;
+			}
+
+			if (stop_moving_next_cycle[tile_id] == 4) {
+				stop_moving_next_cycle[tile_id] = 0;
 			}
 		}
 		
@@ -1508,18 +1517,18 @@ int main(void) {
 			while (tile_id < 15 && active_tile[tile_id]) {
 				tile_id++;
 			}
-			activate_tile(active_tile, location_tile, value_tile, shift_offset_x, shift_offset_y, tile_moving, tile_merged, tile_id);
+			activate_tile(active_tile, location_tile, value_tile, shift_offset_x, shift_offset_y, tile_moving, tile_merged, stop_moving_next_cycle, tile_id);
 			spawn_tile = false;
 		}
 
 		// Draw tiles
-		draw_tiles(active_tile, value_tile, location_tile, shift_offset_x, shift_offset_y);
-				
+		draw_tiles(active_tile, value_tile, location_tile, shift_offset_x, shift_offset_y, tile_moving, tile_merged, stop_moving_next_cycle);
+		
 		// Erase old tiles
 		erase_tiles(active_tile, location_tile, shift_offset_x_prev, shift_offset_y_prev, tile_moving, direction);
-
-		draw_score();
 		
+		// Draw score
+		draw_score();
 		draw_bestScore();
 
 		// Checks if game is over and if it is then it goes into game over screen
@@ -1583,13 +1592,13 @@ void wait_for_vsync() {
 
 
 //--------------------- Init Tiles Function ---------------------//
-void init_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, bool *tile_moving, bool *tile_merged) {
+void init_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, bool *tile_moving, bool *tile_merged, int *stop_moving_next_cycle) {
 	
 	// Activate first tile, deactivate the rest
 	for (int tile_id = 0; tile_id < 16; tile_id++) {
 		
 		if (tile_id == 0) {
-			activate_tile(active_tile, location_tile, value_tile, shift_offset_x, shift_offset_y, tile_moving, tile_merged, tile_id);
+			activate_tile(active_tile, location_tile, value_tile, shift_offset_x, shift_offset_y, tile_moving, tile_merged, stop_moving_next_cycle, tile_id);
 		}
 		
 		else {
@@ -1600,7 +1609,7 @@ void init_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shi
 
 
 //------------------- Activate Tile Function --------------------//
-void activate_tile(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, bool *tile_moving, bool *tile_merged, int tile_id) { 
+void activate_tile(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, bool *tile_moving, bool *tile_merged, int *stop_moving_next_cycle, int tile_id) { 
 	
 	int rand_location;
 	int rand_value;
@@ -1626,7 +1635,8 @@ void activate_tile(bool *active_tile, int *location_tile, int *value_tile, int *
 	shift_offset_x[tile_id] = 0;
 	shift_offset_y[tile_id] = 0;
 	tile_moving[tile_id] = false;
-	tile_merged = false;
+	tile_merged[tile_id] = false;
+	stop_moving_next_cycle[tile_id] = 0;
 }
 
 
@@ -1646,7 +1656,7 @@ bool check_location_taken(bool *active_tile, int *location_tile, int location) {
 
 
 //---------------------- Move Tile Function ---------------------//
-void move_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, int *shift_offset_x_prev, int *shift_offset_y_prev, bool *tile_moving, bool *tile_merged, int direction) {
+void move_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, int *shift_offset_x_prev, int *shift_offset_y_prev, bool *tile_moving, bool *tile_merged, int *stop_moving_next_cycle, int direction) {
 	
 	// Directions: imagine going counter-clockwise starting at 0 degrees //
 	// 0 = right
@@ -1672,7 +1682,7 @@ void move_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shi
 	
 	// Right
 	if (direction_store == 0) {
-		x_offset_inc = 1;
+		x_offset_inc = 4;
 		y_offset_inc = 0;
 		location_inc = 1;
 	}
@@ -1680,13 +1690,13 @@ void move_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shi
 	// Up
 	if (direction_store == 1) {
 		x_offset_inc = 0;
-		y_offset_inc = -1;
+		y_offset_inc = -4;
 		location_inc = -4;
 	}
 	
 	// Left
 	if (direction_store == 2) {
-		x_offset_inc = -1;
+		x_offset_inc = -4;
 		y_offset_inc = 0;
 		location_inc = -1;
 	}
@@ -1694,7 +1704,7 @@ void move_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shi
 	// Down
 	if (direction_store == 3) {
 		x_offset_inc = 0;
-		y_offset_inc = 1;
+		y_offset_inc = 4;
 		location_inc = 4;
 	}
 	
@@ -1720,6 +1730,7 @@ void move_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shi
 			
 			location_tile[tile_id] += location_inc;
 			tile_moving[tile_id] = tile_should_move(active_tile, location_tile, value_tile, tile_moving, tile_merged, location_inc, tile_id);
+			stop_moving_next_cycle[tile_id] = 1;
 			shift_offset_x[tile_id] = 0;
 			shift_offset_y[tile_id] = 0;
 			shift_offset_x_prev[tile_id] = 0;
@@ -1784,7 +1795,7 @@ void merge_tiles(bool *active_tile, int *location_tile, int *value_tile, bool *t
 		tile_merged[tile_id_1] = true;
 		active_tile[tile_id_2] = false;
 		audio_player(tile_collision_sound);
-		current_score += value_tile[tile_id_1] * 2;
+		current_score += value_tile[tile_id_1];
 	}
 }
 
@@ -1798,17 +1809,23 @@ void erase_tiles(bool *active_tile, int *location_tile, int *shift_offset_x_prev
 		
 	for (int tile_id = 0; tile_id < 16; tile_id++) {
 
-		if (active_tile[tile_id] && (shift_offset_x_prev[tile_id] != 0 || shift_offset_y_prev[tile_id] != 0)) {
+		if (active_tile[tile_id] && tile_moving[tile_id]) {
+			//(shift_offset_x_prev[tile_id] != 0 || shift_offset_y_prev[tile_id] != 0)
 
 			// Moving right
 			if (direction_store == 0) {
 
 				// Set starting point for erase
-				x_start = 12 + ((location_tile[tile_id] % 4) * 53 + shift_offset_x_prev[tile_id] - 2);
+				x_start = 12 + ((location_tile[tile_id] % 4) * 53 + shift_offset_x_prev[tile_id] - 4);
 				y_start = 17 + ((location_tile[tile_id] / 4) * 53) + shift_offset_y_prev[tile_id];
+				int extra = 8;
 				
+				// Erase extra pixels
+				if (shift_offset_x_prev[tile_id] >= 44) {
+					extra = 12;
+				}
 
-				for (int x = x_start; x <= x_start + 4; x++) {
+				for (int x = x_start; x <= x_start + extra; x++) {
 					for (int y = y_start; y <= y_start + 46; y++) {
 
 						// Assemble color from background image array
@@ -1817,7 +1834,7 @@ void erase_tiles(bool *active_tile, int *location_tile, int *shift_offset_x_prev
 						color = color << 8; // Bit shift
 						color = color | background[(320 * 2 * y) + (2 * x)]; // Last 8 bits
 
-						plot_pixel(x, y, color);
+						plot_pixel(x, y, color);				
 					}
 				}
 			}
@@ -1827,10 +1844,16 @@ void erase_tiles(bool *active_tile, int *location_tile, int *shift_offset_x_prev
 
 				// Set starting point for erase
 				x_start = 12 + ((location_tile[tile_id] % 4) * 53 + shift_offset_x_prev[tile_id]);
-				y_start = 17 + ((location_tile[tile_id] / 4) * 53) + shift_offset_y_prev[tile_id] + 47;
-
+				y_start = 17 + ((location_tile[tile_id] / 4) * 53) + shift_offset_y_prev[tile_id] + 49;
+				int extra = 8;
+				
+				// Erase extra pixels
+				if (shift_offset_y_prev[tile_id] <= -44) {
+					extra = 12;
+				}
+				
 				for (int x = x_start; x <= x_start + 46; x++) {
-					for (int y = y_start; y >= y_start - 4; y--) {
+					for (int y = y_start; y >= y_start - extra; y--) {
 
 						// Assemble color from background image array
 						color = 0x0000;
@@ -1847,10 +1870,16 @@ void erase_tiles(bool *active_tile, int *location_tile, int *shift_offset_x_prev
 			if (direction_store == 2) {
 
 				// Set starting point for erase
-				x_start = 12 + ((location_tile[tile_id] % 4) * 53 + shift_offset_x_prev[tile_id]) + 47;
+				x_start = 12 + ((location_tile[tile_id] % 4) * 53 + shift_offset_x_prev[tile_id]) + 49;
 				y_start = 17 + ((location_tile[tile_id] / 4) * 53) + shift_offset_y_prev[tile_id];
+				int extra = 8;
+				
+				// Erase extra pixels
+				if (shift_offset_x_prev[tile_id] <= -44) {
+					extra = 12;
+				}
 
-				for (int x = x_start; x >= x_start - 4; x--) {
+				for (int x = x_start; x >= x_start - extra; x--) {
 					for (int y = y_start; y <= y_start + 46; y++) {
 
 						// Assemble color from background image array
@@ -1869,10 +1898,16 @@ void erase_tiles(bool *active_tile, int *location_tile, int *shift_offset_x_prev
 
 				// Set starting point for erase
 				x_start = 12 + ((location_tile[tile_id] % 4) * 53 + shift_offset_x_prev[tile_id]);
-				y_start = 17 + ((location_tile[tile_id] / 4) * 53) + shift_offset_y_prev[tile_id] - 2;
+				y_start = 17 + ((location_tile[tile_id] / 4) * 53) + shift_offset_y_prev[tile_id] - 4;
+				int extra = 8;
+				
+				// Erase extra pixels
+				if (shift_offset_y_prev[tile_id] >= 44) {
+					extra = 12;
+				}
 
 				for (int x = x_start; x <= x_start + 46; x++) {
-					for (int y = y_start; y <= y_start + 4; y++) {
+					for (int y = y_start; y <= y_start + extra; y++) {
 
 						// Assemble color from background image array
 						color = 0x0000;
@@ -1890,7 +1925,7 @@ void erase_tiles(bool *active_tile, int *location_tile, int *shift_offset_x_prev
 
 
 //---------------------- Draw Tile Function ---------------------//
-void draw_tiles(const bool *active_tile, const int *value_tile, const int *location_tile, int *shift_offset_x, int *shift_offset_y) {
+void draw_tiles(const bool *active_tile, const int *value_tile, const int *location_tile, int *shift_offset_x, int *shift_offset_y, bool *tile_moving, bool *tile_merged, int *stop_moving_next_cycle) {
 	
 	int x_start;
 	int y_start;
@@ -1899,7 +1934,7 @@ void draw_tiles(const bool *active_tile, const int *value_tile, const int *locat
 	// Iterate through tiles, draw active ones
 	for (int tile_id = 0; tile_id < 16; tile_id++) {
 		
-		if (active_tile[tile_id]) {
+		if (active_tile[tile_id] && (tile_moving[tile_id] || !currently_moving || tile_merged[tile_id] || stop_moving_next_cycle[tile_id] > 0)) {
 			
 			// Set top left corner of tile
 			x_start = 12 + ((location_tile[tile_id] % 4) * 53);
@@ -2059,7 +2094,7 @@ int chooseDirection(int dirCode) {
 }
 
 //-------------- Game Over Screen And Restart Function --------------//
-void gameIsOver(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, bool *tile_moving, bool *tile_merged) {
+void gameIsOver(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, bool *tile_moving, bool *tile_merged, int *stop_moving_next_cycle) {
 	
 	// Draw Game Over screen and Score and Best Score
 	
@@ -2079,7 +2114,7 @@ void gameIsOver(bool *active_tile, int *location_tile, int *value_tile, int *shi
 				best_score = current_score;
 			}
 			// Initialize tiles again
-			init_tiles(active_tile, location_tile, value_tile, shift_offset_x, shift_offset_y, tile_moving, tile_merged);
+			init_tiles(active_tile, location_tile, value_tile, shift_offset_x, shift_offset_y, tile_moving, tile_merged, stop_moving_next_cycle);
 			return; // Return control back to while loop in main method
 		}
 	}
