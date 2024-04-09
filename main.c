@@ -1618,6 +1618,7 @@ const int tile_collision_sound[1875] = {
 void clear_grid();
 void plot_pixel(int x, int y, short int color);
 void wait_for_vsync();
+void clear_charbuff();
 
 // Tiles
 void init_tiles(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, bool *tile_moving, bool *tile_merged, int *stop_moving_next_cycle);
@@ -1642,6 +1643,7 @@ void audio_player(const int *audio);
 // Score Drawing
 void draw_score();
 void draw_bestScore();
+void draw_finalScores();
 
 // Writing Characters to Char buffer
 void write_char(int x, int y, char c);
@@ -1688,6 +1690,9 @@ int main(void) {
 	int PS2_data;
 	int command;
 	int direction = 4;
+	
+	// Clear any characters displayed
+	clear_charbuff();
 	
 	// Initialize tiles
 	init_tiles(active_tile, location_tile, value_tile, shift_offset_x, shift_offset_y, tile_moving, tile_merged, stop_moving_next_cycle);
@@ -2329,78 +2334,50 @@ int chooseDirection(int dirCode) {
 	}
 }
 
+
 //-------------- Game Over Screen And Restart Function --------------//
 void gameIsOver(bool *active_tile, int *location_tile, int *value_tile, int *shift_offset_x, int *shift_offset_y, bool *tile_moving, bool *tile_merged, int *stop_moving_next_cycle) {
-	
-	// Draw Game Over screen and Score and Best Score
-	short int color;
-
-    // Iterate through all points and draw game over background
-    for (int x = 0; x < 512; x++) {
-        for (int y = 0; y < 240; y++) {
-
-			// Assemble color from background image array
-			color = 0x0000;
-			color = color | gameOverBackground[(320 * 2 * y) + (2 * x) + 1]; // First 8 bits
-			color = color << 8; // Bit shift
-			color = color | gameOverBackground[(320 * 2 * y) + (2 * x)]; // Last 8 bits
-
-            // Plot pixel
-            plot_pixel(x, y, color);
-        }
-    }
-
-	// used code in draw_score but reformated it to show best score when game ends
-	char digits[5] = {'\0'};
-	char bestdigits[5] = {'\0'};
-	int curr = current_score;
-	int bestcurr = best_score;
-
-	int count = 0;
-	int bestcount = 0;
-	
-	int y = 134;
-	int x = 23;
+	// Clearing current score from normal current score location on display
+	int x = 66;
 	char* hw = "            ";
 	while (*hw) {
-		write_char(x, y, *hw);
-		write_char(x + 30, y, *hw);
+		write_char(x, 28, *hw);
+		x++;
+		hw++;
+	}
+
+	// Clearing best score from normal best score location on display
+	x = 66;
+	hw = "            ";
+	while (*hw) {
+		write_char(x, 38, *hw);
 		x++;
 		hw++;
 	}
 	
-	while (curr > 0) {
-		digits[count] = (char)(curr % 10 + '0');
-		curr = curr / 10;
-		count++; 
-	}
-	
-	while (bestcurr > 0) {
-		bestdigits[bestcount] = (char)(bestcurr % 10 + '0');
-		bestcurr = bestcurr / 10;
-		bestcount++; 
-	}
-
-	x = 23;
-	for (int i = count-1; i >= 0; i--) {
-		write_char(x, y, digits[i]);
-		x++;
-	}
-
-	x = 53;
-	if (best_score == 0) {
-		x = 55;
-		write_char(x, y, '0');
-	}
-	else {
-		for (int i = bestcount-1; i >= 0; i--) {
-			write_char(x, y, digits[i]);
-			x++;
-		}
-	}
+	int y = 34;
 
 	// Wait for input key being pressed
 	while (1) {
+		short int color;
+
+		// Iterate through all points and draw game over background
+		for (int x1 = 0; x1 < 512; x1++) {
+			for (int y1 = 0; y1 < 240; y1++) {
+
+				// Assemble color from background image array
+				color = 0x0000;
+				color = color | gameOverBackground[(320 * 2 * y1) + (2 * x1) + 1]; // First 8 bits
+				color = color << 8; // Bit shift
+				color = color | gameOverBackground[(320 * 2 * y1) + (2 * x1)]; // Last 8 bits
+
+				// Plot pixel
+				plot_pixel(x1, y1, color);
+			}
+		}
+		
+		draw_finalScores();
+		
 		// Declare keyboard variables
 		int PS2_data;
 
@@ -2413,78 +2390,100 @@ void gameIsOver(bool *active_tile, int *location_tile, int *value_tile, int *shi
 			if (current_score > best_score) {
 				best_score = current_score;
 			}
+			current_score = 0; // Reseting current score
 			// Initialize tiles again
 			init_tiles(active_tile, location_tile, value_tile, shift_offset_x, shift_offset_y, tile_moving, tile_merged, stop_moving_next_cycle);
+			clear_grid();
+			// Swap front and back buffers
+			wait_for_vsync(); 
+			
+			// Clearing the game over screen current score
+			x = 23;
+			hw = "            ";
+			while (*hw) {
+				write_char(x, y, *hw);
+				x++;
+				hw++;
+			}
+
+			// Clearing the game over screen best score
+			x = 53;
+			hw = "            ";
+			while (*hw) {
+				write_char(x, y, *hw);
+				x++;
+				hw++;
+			}
+
+			// Set new backbuffer
+			pixel_buffer_start = *(buffer_reg + 1);
+			clear_grid();
+
+			
 			return; // Return control back to while loop in main method
 		}
+		
+		// Swap front and back buffers
+        wait_for_vsync(); 
+		
+		// Set new backbuffer
+        pixel_buffer_start = *(buffer_reg + 1);
 	}
 }
 
 
-//--------------------- Score Drawing Function ---------------------//
-void draw_score() {
+//------------------ Draw Final Scores Function ------------------//
+void draw_finalScores() {
+	// finding current score to show in game over screen
 	char digits[5] = {'\0'};
 	int curr = current_score;
 	int count = 0;
-	
-	int x = 66;
-	char* hw = "            ";
-	while (*hw) {
-		write_char(x, 28, *hw);
-		x++;
-		hw++;
+	while (curr > 0) {
+		digits[count] = (char)(curr % 10 + '0');
+		curr = curr / 10;
+		count++; 
 	}
 	
+	// finding best score to show in game over screen
+	char bestdigits[5] = {'\0'};
+	int bestcurr = best_score;
+	int bestcount = 0;
+	while (bestcurr > 0) {
+		bestdigits[bestcount] = (char)(bestcurr % 10 + '0');
+		bestcurr = bestcurr / 10;
+		bestcount++; 
+	}
+		
+	
+	// Drawing current score in game over screen
+	int y = 34; 
+	int x;
 	if (current_score == 0) {
-		x = 66;
-		write_char(x, 28, '0');
+		x = 25;
+		write_char(x, y, '0');
 		return;
 	}
-	
-	while (curr > 0) {
-		digits[count] = (char)(curr % 10 + '0');
-		curr = curr / 10;
-		count++; 
+	else {
+		x = 24;
+		for (int i = count-1; i >= 0; i--) {
+			write_char(x, y, digits[i]);
+			x++;
+		}
 	}
 	
-	x = 66;
-	for (int i = count-1; i >= 0; i--) {
-		write_char(x, 28, digits[i]);
-		x++;
-	}
-}
-
-//--------------------- BestScore Drawing Function ---------------------//
-void draw_bestScore() {
-	char digits[5] = {'\0'};
-	int curr = best_score;
-	int count = 0;
 	
-	int x = 66;
-	char* hw = "            ";
-	while (*hw) {
-		write_char(x, 38, *hw);
-		x++;
-		hw++;
-	}
-	
+	// Drawing current score in game over screen
+	y = 34; 
 	if (best_score == 0) {
-		x = 66;
-		write_char(x, 38, '0');
-		return;
+		x = 55;
+		write_char(x, y, '0');
 	}
-	
-	while (curr > 0) {
-		digits[count] = (char)(curr % 10 + '0');
-		curr = curr / 10;
-		count++; 
-	}
-	
-
-	x = 66;
-	for (int i = count-1; i >= 0; i--) {
-		write_char(x, 38, digits[i]);
-		x++;
+	else {
+		x = 54;
+		for (int i = bestcount-1; i >= 0; i--) {
+			write_char(x, y, bestdigits[i]);
+			x++;
+		}
 	}
 }
 
@@ -2492,9 +2491,10 @@ void draw_bestScore() {
 //------------------ Check Game Over Function ------------------//
 bool checkGameOver(bool *active_tile, int *location_tile, int *value_tile) {
 	// Check if there are any empty spaces first
+	int count = 0;
 	for (int i = 0; i < 16; i++) {
 		// if a tile isnt active then board has empty spaces so return false
-		if (active_tile[i] == false) {
+		if (active_tile[i] == true) {
 			return false;
 		}
 	}
@@ -2540,6 +2540,85 @@ bool checkGameOver(bool *active_tile, int *location_tile, int *value_tile) {
 }
 
 
+//--------------------- Clear Char Buffer Function ---------------------//
+void clear_charbuff() {
+	for (int x = 0; x < 80; x++) {
+		for (int y = 0; y < 60; y++) {
+			write_char(x, y, ' ');
+		}
+	}
+}
+
+
+//--------------------- Score Drawing Function ---------------------//
+void draw_score() {
+	char digits[5] = {'\0'};
+	int curr = current_score;
+	int count = 0;
+	
+	int x = 66;
+	char* hw = "            ";
+	while (*hw) {
+		write_char(x, 28, *hw);
+		x++;
+		hw++;
+	}
+	
+	if (current_score == 0) {
+		x = 66;
+		write_char(x, 28, '0');
+		return;
+	}
+	
+	while (curr > 0) {
+		digits[count] = (char)(curr % 10 + '0');
+		curr = curr / 10;
+		count++; 
+	}
+	
+	x = 66;
+	for (int i = count-1; i >= 0; i--) {
+		write_char(x, 28, digits[i]);
+		x++;
+	}
+}
+
+
+//--------------------- BestScore Drawing Function ---------------------//
+void draw_bestScore() {
+	char digits[5] = {'\0'};
+	int curr = best_score;
+	int count = 0;
+	
+	int x = 66;
+	char* hw = "            ";
+	while (*hw) {
+		write_char(x, 38, *hw);
+		x++;
+		hw++;
+	}
+	
+	if (best_score == 0) {
+		x = 66;
+		write_char(x, 38, '0');
+		return;
+	}
+	
+	while (curr > 0) {
+		digits[count] = (char)(curr % 10 + '0');
+		curr = curr / 10;
+		count++; 
+	}
+	
+
+	x = 66;
+	for (int i = count-1; i >= 0; i--) {
+		write_char(x, 38, digits[i]);
+		x++;
+	}
+}
+
+
 //-------------------- Audio Player Function --------------------//
 void audio_player(const int *audio) {
 		
@@ -2558,9 +2637,11 @@ void audio_player(const int *audio) {
 	} 
 }
 
+
 //-------------------- Char Write Function --------------------//
 void write_char(int x, int y, char c) {
   // VGA character buffer
   volatile char * character_buffer = (char *) (0x09000000 + (y<<7) + x);
   *character_buffer = c;
 }	
+
